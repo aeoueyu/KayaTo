@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="-30 -30 1060 1060" role="img" aria-labelledby="title">
+  <title id="title">Kaya AI assistant</title>
+  <defs>
+    <path id="kaya-shell" d="M785.49,0c-7.65,7.12-15.76,13.81-22.89,21.42c-41.61,44.44-76.8,93.43-103.22,148.41c-18.52,38.56-32.08,79-43.12,120.26c-6.75,25.23-12.73,50.66-19.03,76c-.38,1.54-.53,3.14-.81,4.89c8.95,2.4,17.68,4.47,26.24,7.09c80.83,24.72,145.08,71.58,190.02,143.65c23.07,37,37.86,77.29,42.55,120.72c12.26,113.48-27.94,206.11-114.25,279.04c-48.8,41.24-105.97,65.32-169.17,74.45c-86.34,12.47-167.21-3.48-240.92-50.36c-73.43-46.71-121.27-112.57-140.99-197.8c-9.01-38.94-9.73-78.31-2.35-117.68c16.02-85.56,60.97-152.57,131.26-202.95c40.48-29.02,85.58-47.64,134.46-57.12c.73-.14,1.44-.34,2.15-.54c.42-.12,.81-.31,1.65-.63c-2.38-10.28-4.6-20.61-7.16-30.85c-10.36-41.37-21.6-82.45-36.35-122.56c-23.82-64.82-60.04-122.07-104.75-174.25c-8.85-10.34-18.31-20.16-27.63-30.09c-3.1-3.3-6.67-6.17-10.84-10c8.11,2.31,14.01,6.38,19.43,11.08c24.25,21.02,45.58,44.83,65.76,69.69c54.52,67.17,88.89,144.17,110.32,227.4c2.39,9.29,4.29,18.71,6.15,28.12c1.83,9.27,3.3,18.6,5.06,28.65c32.98-3.88,66.11-3.66,99.15,1.56c2.06-11.21,3.82-22.11,6.07-32.92c22.04-105.69,66.02-200.53,139.64-280.49c13.32-14.46,27.46-28.21,41.8-41.67c5.29-4.96,12.23-8.19,18.5-12.08c.85-.52,2.16-.3,3.26-.42L785.49,0z"/>
+    <clipPath id="left-antenna-clip"><rect x="145" y="-30" width="390" height="450"/></clipPath>
+    <clipPath id="right-antenna-clip"><rect x="525" y="-30" width="330" height="450"/></clipPath>
+    <clipPath id="body-clip"><rect x="-30" y="350" width="1060" height="680"/></clipPath>
+  </defs>
+  <style>
+    .mascot { transform-box: fill-box; transform-origin: center bottom; animation: kayaBounce 3.2s cubic-bezier(.45,0,.55,1) infinite; }
+    .body, .antenna { fill: #701015; }
+    .face-panel { fill: #f5f4f2; }
+    .antenna, .face, .eye { transform-box: fill-box; }
+    .antenna-left { transform-origin: 88% 100%; animation: kayaLeftAntenna 3.4s cubic-bezier(.45,0,.55,1) infinite; }
+    .antenna-right { transform-origin: 12% 100%; animation: kayaRightAntenna 3.1s cubic-bezier(.45,0,.55,1) infinite; }
+    .face { transform-origin: center; animation: kayaFaceMove 4.8s cubic-bezier(.45,0,.55,1) infinite; }
+    .eye { transform-origin: center; }
+    .eye-left { animation: kayaLeftEye 6.4s cubic-bezier(.45,0,.55,1) infinite; }
+    .eye-right { animation: kayaRightEye 6.4s cubic-bezier(.45,0,.55,1) infinite; }
+    @keyframes kayaBounce {
+      0%, 100% { transform: translateY(0) scale(1); }
+      44% { transform: translateY(-14px) scale(1.006,.994); }
+      54% { transform: translateY(-14px) scale(.996,1.004); }
+    }
+    @keyframes kayaLeftAntenna {
+      0%, 100% { transform: rotate(0deg); }
+      34% { transform: rotate(-1.8deg); }
+      68% { transform: rotate(1.25deg); }
+    }
+    @keyframes kayaRightAntenna {
+      0%, 100% { transform: rotate(0deg); }
+      38% { transform: rotate(1.7deg); }
+      72% { transform: rotate(-1.2deg); }
+    }
+    @keyframes kayaFaceMove {
+      0%, 18%, 100% { transform: translate(0,0) rotate(0deg); }
+      38% { transform: translate(-8px,-3px) rotate(-.55deg); }
+      62% { transform: translate(9px,1px) rotate(.65deg); }
+      78% { transform: translate(0,-4px) rotate(0deg); }
+    }
+    @keyframes kayaLeftEye {
+      0%, 16%, 20%, 38%, 56%, 70%, 81%, 100% { transform: translateX(0) scaleY(1); }
+      18%, 74%, 78% { transform: translateX(0) scaleY(.08); }
+      44%, 50% { transform: translateX(16px) scaleY(1); }
+    }
+    @keyframes kayaRightEye {
+      0%, 16%, 20%, 38%, 56%, 100% { transform: translateX(0) scaleY(1); }
+      18% { transform: translateX(0) scaleY(.08); }
+      44%, 50% { transform: translateX(16px) scaleY(1); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .mascot, .antenna, .face, .eye { animation: none; }
+    }
+  </style>
+  <g class="mascot">
+    <use class="body" xlink:href="#kaya-shell" clip-path="url(#body-clip)"/>
+    <use class="antenna antenna-left" xlink:href="#kaya-shell" clip-path="url(#left-antenna-clip)"/>
+    <use class="antenna antenna-right" xlink:href="#kaya-shell" clip-path="url(#right-antenna-clip)"/>
+    <g class="face">
+      <path class="face-panel" d="M517.57,857.58c21.01-.73,42.07-.85,63.03-2.33c27.74-1.96,55.43-4.81,83.1-7.64c14.71-1.5,29.29-4.39,44.01-5.53c36.79-2.85,65.83-19.14,86.9-49.24c19.54-27.92,26.49-59.29,22.28-92.85c-5.25-41.95-25.02-75.41-60.86-98.64c-15.29-9.92-32.6-13.91-50.27-17.7c-44.49-9.53-89.16-17.22-134.63-20.05c-66.43-4.14-132.23,.45-197.49,13.3c-15.23,3-30.31,6.93-45.64,9.19c-33.88,4.98-60.77,21.13-79.83,49.36c-24.66,36.51-29.34,76.54-16.24,118.07c12.78,40.53,38.74,69.94,79.64,84.04c10.76,3.71,22.5,4.78,33.87,6.52c37.04,8.72,94.42,12.93,152.13,13.5z"/>
+      <path class="eye eye-left" fill="#060606" d="M352.79,730.32c.34-13.35,6.16-28.79,19.25-40.89c21.45-19.82,52.56-19.44,73.9,.56c23.87,22.38,26.29,61,5.4,86.2c-23.91,28.84-67.47,25.71-88.21-6.34c-6.89-10.65-10.31-22.3-10.34-39.53z"/>
+      <path class="eye eye-right" fill="#060606" d="M629.53,796c-20.24-1.36-37.25-13.75-47.03-36.02c-10.52-23.95-4.7-53.08,13.51-70.03c22.06-20.52,54.08-20.04,75.55,1.12c27.97,27.59,23.61,76.28-8.66,96.69c-8.88,5.63-18.4,8.34-33.37,8.24z"/>
+    </g>
+  </g>
+</svg>
