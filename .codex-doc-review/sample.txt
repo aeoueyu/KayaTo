@@ -1,0 +1,538 @@
+CHAPTER                                                                                                   1
+INTRODUCTION
+
+        Oral health is a fundamental component of overall health and well-being, directly impacting
+an individual’s quality of life [1]. As the healthcare industry modernizes, the adoption of specialized
+health information technology has become essential for clinical efficiency and improved patient
+care [2]. Dental Information Management Systems have emerged to help transition clinics from
+traditional to streamlined digital environments [3]. These systems facilitate the secure management
+of Electronic Medical Records (EMR), patient history, inventory, and scheduling, thereby reducing
+administrative burdens and allowing dental practitioners to focus primarily on patient treatment [4].
+
+        Despite growing technology and digitalization, many startup and expanding dental clinics
+still rely on manual methods for their daily operations [2]. This often results in disorganized patient
+records, scheduling conflicts, and inefficient clinic management [4]. Furthermore, patients
+frequently experience anxiety or hesitation due to a lack of accessible, personalized dental health
+information [5]. Integrating Artificial Intelligence (AI) for educational patient engagement and
+recommended scheduling addresses this gap, providing patients with a clearer understanding of
+their oral health and fostering higher trust and satisfaction [6].
+
+        Addressing these operational and patient engagement challenges is a highly necessary and
+impactful step for growing dental practices. Developing an integrated platform that automates clinic
+workflows, such as centralizing electronic medical records (EMR), modernizing appointment
+scheduling, and utilizing artificial intelligence for patient education and recommended scheduling,
+can significantly resolve existing operational problems. Various studies provided evidence that the
+implementation of specialized information systems across different medical and dental clinics has
+greatly improved overall clinical efficiency [3], reduced administrative errors [4], and elevated the
+quality of patient care [7]. Therefore, applying these technological innovations is important in
+bridging the gap between traditional manual operations and modernized dental healthcare delivery.
+
+
+
+
+1.1 PROJECT CONTEXT
+
+        The United Nations’ Sustainable Development Goal 3 emphasized the importance of
+ensuring healthy lives and promoting well-being for all at all ages [8]. A key factor in achieving this
+goal is the accessibility, efficiency, and quality of healthcare delivery, including oral health. To fulfill
+this objective globally, the healthcare industry is actively transitioning from traditional practices to
+digital health information systems to improve patient outcomes and clinic operations [7]. However,
+in developing countries like the Philippines, dental practice modernization remains in transition.
+While top-tier hospitals have fully embraced digitalization, many local and expanding dental clinics
+still encounter barriers to digital transformation, leading to operational inefficiencies that directly
+affect patient care and clinic management [9]. Locally, expanding a dental clinic into a multi-branch
+enterprise introduces significant operational challenges. When clinics rely heavily on manual
+procedures and fragmented communication platforms, they face issues such as isolated data silos
+and insecure transfer of sensitive medical records. Without unified digital infrastructure, both the
+administrative efficiency of the clinic and the overall engagement and satisfaction of the patients are
+compromised [10].
+
+       Dentime Dental Clinic, established in 2024, is a rapidly growing dental practice located at
+2/F JN Terraces Bldg., 881 J. P. Rizal Street, Brgy. Concepcion Uno, Marikina City, operating with a
+floor area of 30 square meters. Dr. Michael Edwin Tamayo, DMD, owns the clinic. Currently, the clinic
+has one in-house dentist, one secretary, and a clinic manager, and it exclusively offers dental
+services. Serving about 6 to 10 patients daily through scheduled appointments and walk-ins, the
+clinic has seen a steady patient flow. This inspired management to expand operations to
+accommodate and treat more patients from other communities by constructing a second branch at
+2/F Arquilos Commercial Bldg., Phase 1 Block 12 Lot 3 Eastwood Residences, San Isidro, Rodriguez,
+Rizal. To support the expansion, management plans to hire additional dentists as needed, depending
+on the initial patient volume at the new location. While there are no concrete plans for additional
+branches yet, the management estimates that future clinics would also require around 30 to 50
+square meters of space to support their operations effectively.
+
+       Currently, Dentime Dental Clinic relies on manual, fragmented methods to manage daily
+operations. The clinic accommodates walk-ins and schedules patient appointments primarily
+through its Facebook Page and Messenger. The clinic then tracks these appointments using Google
+Calendar and Excel spreadsheets. The clinic stores patient histories and dental records manually in
+paper files and folders. Furthermore, the clinic does not formally record dental materials used during
+treatments, relying only on visual checks.
+
+       As the clinic serves more patients, its current appointment setup creates significant
+challenges. While the clinic manages to avoid overlapping schedules, relying on different platforms
+like Facebook Messenger for appointments and follow-up reminders, alongside Google Calendar
+and Excel for tracking, requires significant manual effort from the limited staff. This fragmented
+communication and tracking setup compromises optimal clinical efficiency.
+
+       Furthermore, the ongoing construction of the second branch highlights a critical limitation in
+records management. With dental records currently stored in physical folders, transferring patient
+histories and treatment records between the main clinic and the new branch will have to be done
+manually. Without a centralized digital database, retrieving and sharing these physical records
+across locations will cause operational delays, risk data misplacement, and lead to fragmented
+medical histories for patients visiting multiple branches.
+
+       Another significant operational challenge is manually monitoring clinic inventory. Currently,
+the clinic relies solely on visual checks, with no formal record to track the use of fast-moving and
+perishable dental supplies such as cotton, anesthesia, brackets and wires for braces, needles,
+syringes, gloves, and masks. Without system-assisted inventory tracking, staff struggle to accurately
+monitor stock levels after treatments, increasing the risk of supply shortages during critical
+procedures.
+
+       To address these issues, the researchers propose developing NgitiFy, a centralized Dental
+Information Management System. NgitiFy will replace the clinic’s fragmented scheduling process
+with a dedicated Appointment and Schedule Management Module, allowing for seamless booking
+and automated notifications. Furthermore, the system will introduce a centralized Electronic
+Medical Record (EMR) module capable of secure, branch-level data isolation. This ensures that
+patient files can be safely accessed and transferred between the first and second branches without
+relying on insecure messaging platforms [3]. Additionally, the system includes a comprehensive
+dashboard and report generator to track daily patient volume, providing management with essential
+data to support and justify decisions about future branch expansion.
+
+       Beyond administrative efficiency, NgitiFy provides Dentime Dental Clinic with a strong
+competitive advantage through its AI-Driven Patient Engagement Module. To promote patient
+awareness and proactive oral care, the system features AI Patient Engagement that provides
+personalized dental health advice, such as dietary recommendations for teeth maintenance, as well
+as recommended visit windows for follow-up schedules. Moreover, the AI-Assisted Radiograph
+Review feature within the Patient EMR allows dentists to review radiograph quality, record clinical
+findings and annotations, and prepare dentist-approved summaries for patients. Lastly, the AI
+Patient Engagement Module supports continuous oral health management by providing access to
+NgitiBot, Dental Health Education, Oral Health Management, and the Recommended Visit Window,
+helping patients maintain awareness of their daily oral health. Ultimately, NgitiFy will empower
+Dentime Dental Clinic to transition from manual, single-branch operations to a highly efficient,
+multi-branch digital ecosystem, ensuring high-quality service delivery as they continue to expand.
+1.2 PURPOSE AND DESCRIPTION
+
+       The project, NgitiFy: A Dental Information Management System with AI-Driven Patient
+Engagement for Dentime Dental Clinic, aims to develop a centralized digital platform that improves
+patient record management, clinic operations, and patient engagement. This project addresses the
+clinic’s current reliance on manual, non-integrated systems such as walk-in scheduling, Facebook
+inquiries, and Google Calendar tracking. These methods often create inefficient workflows,
+fragmented patient histories, and challenges in monitoring appointments and managing clinic
+inventory. By implementing NgitiFy, the clinic can centralize patient data, automate administrative
+tasks, and improve overall efficiency, especially as Dentime Dental Clinic expands to multiple
+branches.
+
+       NgitiFy introduces several relevant features, including an Electronic Medical Record,
+Interactive Digital Odontogram, AI-Assisted Radiograph Review, and AI Patient Engagement Module.
+The AI Patient Engagement Module consists of NgitiBot, Dental Health Education, Oral Health
+Management, and the Recommended Visit Window. NgitiBot provides supported conversational
+oral health guidance and personalized dietary recommendations. Dental Health Education provides
+approved educational materials, while Oral Health Management allows patients to record and
+monitor relevant oral health information. The Recommended Visit Window provides visit guidance
+based on available patient records and oral health inputs. The system also includes appointment
+scheduling and supply and stock monitoring to improve clinic operations.
+
+       The system is comprehensively designed to improve service delivery and administrative
+operations. Specifically, the development and implementation of NgitiFy will be highly beneficial to
+the following:
+
+       Dental Patients. It provides convenient appointment booking, access to treatment history,
+dental health educational materials, oral health monitoring tools, and recommended visit guidance,
+improving overall access to clinic services and oral health information.
+
+       Dentists. The system improves clinical workflow by providing secure access to patient
+records, an interactive digital odontogram, AI-assisted radiograph review with dentist-approved
+summaries, and accurate material-usage tracking.
+       Clinic Secretary. Helps efficiently encode patient information, manage appointments and
+schedules, monitor inventory alerts, and handle patient concerns, significantly reducing manual
+workload and facilitating secure data transfers.
+
+       Branch Manager. Enables oversight of branch-level operations, including appointment
+scheduling, queue management, patient registration, and inventory monitoring within the assigned
+clinic branch.
+
+       Clinic Owner. Enables centralized monitoring of daily patient volumes, clinic operations,
+patient reports, and overall clinic performance across branches for better management and
+decision-making.
+
+       System Administrator. Maintains full control over the NgitiFy system, including user
+account management for all roles, branch setup, system configuration, database integrity, audit trail
+monitoring, and role-based access permissions.
+
+       Researchers. Enhances knowledge in developing web and mobile healthcare systems,
+providing valuable learning experiences in artificial intelligence integration, database management,
+UI/UX design, and software development.
+
+       Future Researchers. Serves as a solid foundation and useful reference for future studies on
+innovations in dental and healthcare management systems.
+1.3 OBJECTIVES
+
+General Objective
+
+       The primary goal is to develop and implement NgitiFy: A Dental Information Management
+System with AI-Driven Patient Engagement for Dentime Dental Clinic through a web and mobile
+application.
+
+
+
+Specific Objectives
+       Specifically, these are the objectives of the capstone project:
+       1. To develop a centralized web and mobile Electronic Medical Record (EMR) system that
+           ensures the secure synchronization and transfer of patient profiles, medical and dental
+           histories, treatment history, digital odontograms, and radiograph images across multiple
+           branches, featuring role-based access control restricted to the owner, authorized
+           dentists, and clinic staff.
+       2. To develop an Appointment and Schedule Management module integrated with a Smile
+           Hub for patients that centralizes reservations from various channels, automates
+           notification systems, and features AI-Driven Patient Engagement for personalized
+           NgitiBot, dental health education, overall oral health management, and recommended
+           visit windows.
+       3. To create an Interactive Digital Odontogram integrated with an AI-Assisted Radiograph
+           Review feature that enables dentists to examine radiograph quality, record and annotate
+           clinical findings, link relevant tooth and treatment information, and prepare dentist-
+           approved summaries for patient reference.
+       4. To create a Supply and Stock Monitoring module that tracks the inventory levels of
+           perishable dental items across branches and provides automated low-stock alerts. This
+           module allows dentists to log material usage post-treatment for real-time manual
+           deduction. It includes a report-generator dashboard that tracks daily patient volume to
+           help management make branch-expansion decisions.
+       5. To evaluate the system based on the following criteria:
+                 a. Functionality
+                 b. Reliability
+                 c. Performance Efficiency
+d. Compliance
+e. Usability
+1.4 SCOPE AND DELIMITATION
+
+SCOPE
+
+
+        The NgitiFy will function as a centralized web and mobile application, enhancing
+management operations at Dentime Dental Clinic and its authorized locations. The system will
+streamline patient record management, appointment scheduling, clinical support functions, and
+resource tracking. The system will process Electronic Medical Records (EMR), including patient
+demographic information, medical and dental records, treatment documentation, and digital
+odontograms. The system will securely distribute records across branches with access controls that
+permit only admins, owners, branch managers, dentists, and secretaries to access the information.
+
+
+        The system enforces a role-based access control hierarchy: System Administrator, Clinic
+Owner, Branch Manager, Dentist, Clinic Secretary, and Patient. The System Administrator holds full
+system-wide access and is responsible for all technical configurations, user account management,
+and system integrity. The Clinic Owner has cross-branch operational visibility, while the Branch
+Manager oversees day-to-day operations only within their assigned branch.
+
+
+        NgitiFy will provide clinical support through its Interactive Digital Odontogram system, which
+enables dentists to document their findings while tracking complete tooth history. The system
+includes an AI-Assisted Radiograph Review feature that presents objective image-quality
+information and allows dentists to record clinical findings and prepare review summaries. This
+feature serves only as decision support and does not independently interpret radiographs or provide
+a medical diagnosis. The system includes an AI Patient Engagement Module composed of NgitiBot,
+Dental Health Education, Oral Health Management, and the Recommended Visit Window. NgitiBot
+serves as the AI Patient Care Companion by providing conversational oral health guidance and
+personalized dietary recommendations within its supported scope. Dental Health Education
+provides approved educational materials, while Oral Health Management allows patients to record
+and monitor relevant oral health information. The Recommended Visit Window provides visit
+guidance based on available patient records and oral health inputs.
+
+
+The Appointment and Schedule Management Module will replace traditional calendar systems by
+centralizing appointment requests, patient schedules, dentist availability, and staff schedules. The
+system will provide a Smile Hub for patients together with the AI Patient Engagement Module. Within
+this module, NgitiBot serves as the AI Patient Care Companion, providing real-time responses to
+supported patient inquiries. NgitiFy will include a Supply and Stock Monitoring module that monitors
+perishable dental supplies across different locations. This feature allows dentists to manually log
+material usage, enabling the system to automatically track deductions and send low-inventory
+notifications, while also producing daily patient reports that help assess the need for business
+growth. The system will also be evaluated using an evaluation instrument adapted from the ISO 9126
+software quality model and Jakob Nielsen’s usability attributes. The assessment covers
+functionality, reliability, performance efficiency, compliance, and usability. NgitiFy's complete
+dental information management system provides an efficient platform that supports clinical
+decision-making while improving the patient experience.
+SYSTEM FLOWCHART
+
+       In this study, system flowcharts are presented in a swimlane format with two columns: the
+left column represents user actions, and the right column represents the corresponding processes
+executed by the system. This format clearly distinguishes each party's responsibilities at every step
+of a given workflow. Every flowchart begins with the user as the initiating actor, consistent with
+NgitiFy's event-driven nature, where a user action sets all system processes in motion. A total of
+forty-eight (48) system flowcharts were constructed to document the complete operational flow of
+each module and feature of NgitiFy: A Dental Information Management System with AI-Driven
+Patient Engagement for Dentime Dental Clinic, covering processes ranging from user authentication
+and patient registration to AI-assisted dental tools, inventory management, and system
+administration functions.
+NGITIFY MOBILE ACTIVITY DIAGRAM
+
+
+
+
+                            Figure 1. Login Activity Diagram: Mobile
+
+       Figure 12 illustrates the mobile login process. The patient opens the NgitiFy mobile
+application, enters an email address and password, and clicks the login button. The system
+validates the credentials, checks login attempts and account status, displays errors when needed,
+locks the account after repeated failed attempts, and redirects the patient to the dashboard when
+login is successful.
+                  Figure 2. Appointment Scheduling Activity Diagram: Mobile
+
+       Figure 2 illustrates how a patient schedules an appointment through the mobile application.
+The patient selects a preferred date, time slot, and procedure, reviews the appointment and privacy
+policy summary, and submits the booking request. The system displays the calendar, validates each
+selection, shows appointment details, and updates the appointment status after submission.
+                  Figure 3. AI Patient Engagement Activity Diagram: Mobile
+
+       Figure 3 illustrates how the patient accesses AI Patient Engagement in the mobile
+application. The system loads the engagement overview, retrieves patient-related data, displays
+available options, and routes the patient to NgitiBot, dental health education, oral health
+management, or recommended visit features depending on the selected option.
+Figure 4. NgitiBot Activity Diagram: Mobile
+       Figure 4 illustrates the NgitiBot conversation process in the mobile application. The patient
+enters a message, and the system saves the message, sends it to the backend, validates the content
+and patient safety rules, retrieves relevant patient and dental knowledge data, generates an AI
+response, and displays either the generated answer or a refusal message when the inquiry is outside
+the allowed scope.
+                   Figure 5. Dental Health Education Activity Diagram: Mobile
+
+       Figure 16 illustrates how the patient uses the dental health education feature. The patient
+opens Dental Health Education, views the available categories, selects a topic, and the system
+displays the selected educational content or redirects the patient to another available option.
+                   Figure 6. Oral Health Management Activity Diagram: Mobile
+
+       Figure 17 illustrates the oral health management process. The system displays oral health
+information and daily random facts, and the patient can view oral health content, book the next visit,
+or navigate to another section of the application.
+                Figure 7. Recommended Visit Window Activity Diagram: Mobile
+
+       Figure 18 illustrates how the recommended visit feature generates a recommended follow-
+up window. The patient opens the recommended visit screen, enters oral health factors and quick
+logs, and the system checks the submitted data, appointment history, treatment records, and
+recorded next visit details before computing and displaying the recommended visit result.
+                 Figure 8. Electronic Medical Record Activity Diagram: Mobile
+
+       Figure 19 illustrates how the patient accesses the mobile EMR section. The patient opens
+the EMR page and selects the medical and dental history, treatment history, odontogram, and
+radiograph image tabs, while the system displays the corresponding read-only record section.
+                 Figure 9. Medical and Dental History Activity Diagram: Mobile
+
+       Figure 20 illustrates how the patient views medical and dental history records in the mobile
+application. The patient opens Medical Records, selects the Medical and Dental History tab, and the
+system displays the appropriate history page or redirects the patient to another selected tab.
+                     Figure 10. Treatment History Activity Diagram: Mobile
+
+       Figure 21 illustrates how the patient views treatment history records. The patient opens
+Medical Records, selects the Treatment History tab, and the system displays the treatment history
+page or navigates to another selected medical record tab.
+                       Figure 11. Odontogram Activity Diagram: Mobile
+
+       Figure 22 illustrates how the patient views odontogram information through the mobile EMR.
+The patient selects the Odontogram tab, views the odontogram page, and may select a tooth
+number, while the system loads and displays the selected tooth information.
+                         Figure 12. Radiograph Activity Diagram: Mobile
+
+       Figure 23 illustrates how the patient views radiograph records in the mobile application. The
+patient selects the Radiograph tab, and the system loads available radiograph records, displays
+either the record list or a no-record message, and shows radiograph details when the patient selects
+a record.
+                            Figure 13. Notifications Activity Diagram: Mobile
+
+        Figure 24 illustrates how mobile notifications are viewed. The patient taps the notification
+bell icon, and the system displays the notifications page, checks whether notifications are available,
+shows an empty state or notification list, and redirects the patient to a related page when a
+notification is selected.
+                         Figure 14. Activity Logs Activity Diagram: Mobile
+
+       Figure 25 illustrates how the system displays patient activity logs. The patient opens Activity
+Logs, and the system loads account activity records, checks whether records exist, and displays
+either the activity history or a no-records message.
+                     Figure 15. Account Settings Activity Diagram: Mobile
+
+       Figure 26 illustrates the account settings process in the mobile application. The patient
+opens Account Settings and may edit profile information, change the account password, or open
+activity logs. The system validates changes, displays errors or password rules when needed, saves
+valid updates, and updates the account information.
+                            Figure 16. Logout Activity Diagram: Mobile
+
+       Figure 27 illustrates the mobile logout process. The patient clicks Logout and confirms the
+action; the system closes the confirmation dialog, records the logout activity, clears the active
+session, and returns the patient to the login page.
+NGITIFY WEB ACTIVITY DIAGRAM
+
+
+
+
+                             Figure 17. Login Activity Diagram: Web
+
+       Figure 28 illustrates the web login process for patients and staff users. The user enters an
+email address and password, and the system validates the credentials, checks failed login attempts
+and account status, displays errors as needed, locks the account after repeated failed attempts,
+and redirects the user to the appropriate role-based dashboard after a successful login.
+                  Figure 18. Appointment Scheduling Activity Diagram: Web
+
+       Figure 29 illustrates the web appointment scheduling process for a patient. The patient
+selects a preferred date, time slot, and procedure, reviews the appointment and privacy policy
+summary, and submits the request. The system displays the calendar, validates the selections,
+shows the appointment details, and updates the appointment status after booking.
+                    Figure 19. Schedule Management Activity Diagram: Web
+
+       Figure 30 illustrates how staff manage clinic schedules in the web system. The user opens
+Schedule Management, filters schedule records, changes the schedule view, exports records, adds
+or edits schedule entries, and deletes or updates schedule status. At the same time, the system
+validates inputs, displays the proper schedule list, and saves the changes.
+                       Figure 20. Patient Registration Activity Diagram: Web
+
+         Figure 31 illustrates the patient registration process the secretary handles. The secretary
+opens the registration form, enters patient information, confirms data privacy and digital consent,
+and submits the record. The system validates the input, displays real-time errors for invalid entries,
+saves the patient record, displays a success message, and sends an activation link to the patient’s
+email.
+                  Figure 21. User Account Management Activity Diagram: Web
+
+         Figure 32 illustrates how authorized users manage system accounts. The system checks the
+staff role, displays the appropriate user account list, supports filtering and export, and allows users
+to add, view, edit, archive, restore, deactivate, or activate accounts, with validation and confirmation
+steps.
+                             Figure 22. EMR Activity Diagram: Web
+
+       Figure 33 illustrates the web EMR access process. The user opens the EMR page and selects
+among patient profile, medical and dental history, treatment history, odontogram, and radiograph
+image tabs, while the system displays the selected EMR section.
+                         Figure 23. Patient Profile Activity Diagram: Web
+
+       Figure 34 shows how the patient profile tab appears in the EMR. The user selects the Patient
+Profile tab, and the system displays the patient’s profile information or redirects the user to another
+selected tab.
+                 Figure 24. Medical and Dental History Activity Diagram: Web
+
+       Figure 35 illustrates how users access medical and dental history records in the web EMR.
+The user selects the Medical and Dental History tab, views the displayed history, and may navigate
+to another EMR tab.
+                        Figure 25. Treatment History Activity Diagram: Web
+
+       Figure 36 illustrates how the web EMR displays treatment history records. The user selects
+the Treatment History tab, and the system displays the treatment history or redirects the user to
+another selected tab.
+Figure 26. Odontogram Activity Diagram: Web
+       Figure 37 illustrates how the system views and updates odontogram information. The
+system displays the odontogram, checks the user role, shows static or view-only details when
+appropriate, and allows authorized users to select teeth, choose tooth conditions and areas, add
+notes, save updates, record update history, and display the updated chart.
+                     Figure 27. Radiograph Images Activity Diagram: Web
+
+       Figure 38 illustrates how the web EMR manages radiograph images. The system displays the
+radiograph page, checks the user role, allows authorized users to upload radiograph images with
+validated details, saves the record, updates the radiograph list, and displays selected radiograph
+information.
+                   Figure 28. AI Patient Engagement Activity Diagram: Web
+
+       Figure 39 illustrates the patient engagement process on the web. The patient opens AI
+Patient Engagement, and the system loads engagement data, displays available options, and routes
+the patient to NgitiBot, dental health education, oral health management, or recommended visit
+features.
+Figure 29. NgitiBot Activity Diagram: Web
+       Figure 40 illustrates the web NgitiBot conversation process. The patient submits a message,
+and the system saves it, sends it to the backend, validates the content and safety rules, retrieves
+relevant patient and dental knowledge, generates an AI answer, and displays the response or a
+refusal message.
+                   Figure 30. Dental Health Education Activity Diagram: Web
+
+       Figure 41 illustrates how the patient accesses dental health education content online. The
+patient opens Dental Health Education, views available categories, selects a category, and the
+system displays the selected educational content or navigates to another option.
+                    Figure 31. Oral Health Management Activity Diagram: Web
+
+        Figure 42 illustrates the web oral health management process. The system displays oral
+health information and random oral health facts, and the patient may review the content, book the
+next visit, or navigate to another section.
+                Figure 32. Recommended Visit Window Activity Diagram: Web
+
+       Figure 43 illustrates how the web recommended visit feature computes a recommended
+visit window. The patient enters oral health factors and quick logs, and the system checks saved
+logs, completed treatments, appointment history, and recorded next-appointment details before
+displaying the recommended visit result and an optional booking prompt.
+                      Figure 33. Website Booking Activity Diagram: Web
+
+       Figure 44 illustrates the public website booking process. The patient opens the appointment
+page, enters booking details, accepts the privacy notice, completes CAPTCHA verification, and
+submits the request. The system validates inputs and consent, checks patient records, handles
+registered or matching patient details, saves the pending appointment, sends the pre-registration
+link when needed, and emails the appointment notice.
+Figure 34. Material Usage Logging Activity Diagram: Web
+       Figure 45 illustrates how dentists log material usage during completed appointments. The
+dentist opens the material usage log, selects a completed appointment and materials, enters usage
+details, and submits the entry. The system validates the input, shows available materials, deducts
+stock, updates material inventory, and records the material usage.
+                Figure 35. AI-Assisted Radiograph Review Activity Diagram: Web
+
+       Figure 46 illustrates the AI-assisted radiograph review process. The dentist selects an
+existing radiograph record, reviews the original image and its objective quality information, and
+records the relevant clinical findings. After completing the review, the dentist generates and edits a
+summary draft based on the verified findings and linked EMR information. The system validates the
+review requirements and publishes the summary to the patient’s record only after the dentist
+explicitly approves it. The system then notifies the patient that a dentist-approved radiograph
+summary is available.
+        Figure 36. Branch Management and Expansion Analytics Activity Diagram: Web
+
+       Figure 47 illustrates branch management and expansion analytics. The admin or owner
+opens the branch module, views the branch list and analytics, adds a branch with validated details,
+views and edits existing branch information, saves updates, and deactivates or reactivates branches
+through confirmation steps.
+Figure 37. Supply and Stock Monitoring Activity Diagram: Web
+       Figure 48 illustrates the supply and stock monitoring process. Authorized users open the
+supply and stock page, filter and view supply records, expand supply information, receive new stock
+batches, and remove selected batches; the system validates entries, updates stock records, and
+displays confirmation messages.
+                Figure 38. Branch Transfer Management Activity Diagram: Web
+
+       Figure 49 illustrates how a patient is transferred to another branch. The authorized user
+selects a patient, opens the branch transfer form, chooses the target branch, enters a transfer
+reason, reviews upcoming appointment effects and warnings, confirms the action, and the system
+moves the patient to the target branch.
+                      Figure 39. Database Backup Activity Diagram: Web
+
+       Figure 50 illustrates the database backup process. The admin opens the backup page,
+creates a manual backup, refreshes the backup list, or changes automatic backup settings. At the
+same time, the system starts the backup, creates a database copy, saves the backup record,
+updates the backup history, validates settings, and saves configuration changes.
+                        Figure 40. Integrity Tools Activity Diagram: Web
+
+       Figure 51 illustrates how the admin uses integrity tools. The admin runs all checks or scans
+a selected area, reviews the summary and affected records, selects a correction action, confirms
+the change, and the system applies and saves the safe correction.
+                    Figure 41. System Configuration Activity Diagram: Web
+
+       Figure 52 illustrates the system configuration process. The admin opens System
+Configuration and may update clinic information, appointment settings, email templates, or website
+content. The system validates each input, displays real-time errors for invalid entries, saves valid
+changes, and updates the corresponding configuration records.
+                           Figure 42. Audit Trail Activity Diagram: Web
+
+       Figure 53 illustrates the audit trail process for the admin. The admin opens the Audit Trail
+module, and the system displays the audit trail page, loads system audit records, and checks
+whether records are available. If records exist, the system displays the audit records; otherwise, it
+shows that no audit records are available.
+                          Figure 43. Notifications Activity Diagram: Web
+
+        Figure 54 illustrates the notification process for patients and staff users. The user clicks the
+notification bell icon, and the system displays the notifications page, checks the notification list, and
+shows either an empty notification message or available notifications. When the user selects a
+notification, the system may redirect the user to the related page.
+                          Figure 44. Activity Logs Activity Diagram: Web
+
+        Figure 55 illustrates the activity logs process for patients and staff users. The user opens the
+Activity Logs page, and the system loads account activity records and checks whether activity
+records are available. It displays either the activity log list or a message indicating that no activity
+records exist.
+                      Figure 45. Account Settings Activity Diagram: Web
+
+       Figure 56 illustrates the account settings process for patients and staff users. The user
+opens Account Settings and may edit profile information, change the password, or access activity
+logs. The system displays the account settings page, validates profile or password changes, shows
+errors and password rules when needed, enables the update button once requirements are met,
+saves valid changes, and updates the account information.
+                            Figure 46. Logout Activity Diagram: Web
+
+       Figure 57 illustrates the logout process for patients and staff users. The user clicks Logout
+and confirms the action. If the user cancels, the system closes the confirmation dialog. If the user
+proceeds, the system records the logout activity, clears the saved session, and redirects the user
+back to the login page.
+

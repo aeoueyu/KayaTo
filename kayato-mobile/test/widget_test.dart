@@ -8,8 +8,7 @@ void main() {
 
   testWidgets('shows and dismisses a success toast', (tester) async {
     await tester.pumpWidget(const KayaToApp());
-
-    await tester.tap(find.text('Show success'));
+    kayaToast.success('Task created');
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
