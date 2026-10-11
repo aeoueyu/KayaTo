@@ -1,5 +1,140 @@
-import { ArrowRight, Check, FileText, Sparkles, Upload } from 'lucide-react';
+import { ArrowRight, Check, FileText, NotebookPen, Sparkles, Upload } from 'lucide-react';
 import { useState } from 'react';
-import { api, errorMessage } from '../lib/api';
 import KayaMascot from '../components/KayaMascot';
-export default function AIPlanner(){const [brief,setBrief]=useState(''),[file,setFile]=useState(null),[plan,setPlan]=useState([]),[error,setError]=useState(''),[busy,setBusy]=useState(false),[saved,setSaved]=useState(false);const selectFile=async e=>{const picked=e.target.files[0];setFile(picked);if(picked&&(/text|json|csv/.test(picked.type)||/\.(txt|md|csv|json)$/i.test(picked.name)))setBrief(await picked.text());};const generate=async()=>{setBusy(true);setError('');setSaved(false);try{const {data}=await api.post('/planner/generate',{text:brief});setPlan(data.tasks);}catch(e){setError(errorMessage(e));}finally{setBusy(false);}};const create=async()=>{setBusy(true);setError('');try{await Promise.all(plan.map(task=>api.post('/tasks',{...task,project:'AI Planner',taskType:'personal',aiGenerated:true})));setSaved(true);}catch(e){setError(errorMessage(e));}finally{setBusy(false);}};return <section className="page-block"><div className="page-heading"><div><h1>Project planner</h1><p>Turn a brief into a reviewable task breakdown. Nothing is saved until you confirm it.</p></div></div><div className="planner-layout"><section className="panel planner-form"><label className={`upload-zone ${file?'has-file':''}`}><input type="file" accept=".txt,.md,.csv,.json" onChange={selectFile}/>{file?<><FileText size={22}/><div><b>{file.name}</b><small>Text imported into your brief</small></div><Check size={19}/></>:<><Upload size={24}/><b>Choose a text, Markdown, CSV, or JSON file</b><small>You can also paste the project brief below.</small></>}</label><label className="field-label">Project brief<textarea rows="12" value={brief} onChange={e=>setBrief(e.target.value)} placeholder="Describe the project requirements, outputs, deadlines, and constraints."/></label>{error&&<p className="form-error">{error}</p>}<button className="button button-primary button-full" disabled={busy||brief.trim().length<20} onClick={generate}>{busy?'Preparing plan...':<>Generate plan <ArrowRight size={17}/></>}</button></section><aside className={`panel plan-preview ${plan.length?'generated':''}`}><div className="preview-empty"><KayaMascot size={78} decorative/><h2>{plan.length?'Review your draft':'Your plan will appear here'}</h2><p>{plan.length?'Edit any task title before adding the plan to your workspace.':'Add a project brief to generate a practical starting point.'}</p></div>{plan.length>0&&<div className="ai-task-list">{plan.map((task,index)=><article key={index}><span>{index+1}</span><div><input aria-label={`Task ${index+1} title`} value={task.title} onChange={e=>setPlan(current=>current.map((item,i)=>i===index?{...item,title:e.target.value}:item))}/><small>{task.estimatedHours} estimated hours · {task.priority} priority</small></div><i><Sparkles size={14}/></i></article>)}<button className="button button-primary button-full" onClick={create} disabled={busy||saved}>{saved?'Tasks created':'Create tasks'}</button>{saved&&<p className="form-message">Your generated tasks are now in My tasks.</p>}</div>}</aside></div></section>}
+import { api, errorMessage } from '../lib/api';
+
+export default function AIPlanner() {
+  const [brief, setBrief] = useState('');
+  const [file, setFile] = useState(null);
+  const [plan, setPlan] = useState([]);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const selectFile = async (event) => {
+    const picked = event.target.files[0];
+    setFile(picked);
+    if (picked && (/text|json|csv/.test(picked.type) || /\.(txt|md|csv|json)$/i.test(picked.name))) {
+      setBrief(await picked.text());
+    }
+  };
+
+  const generate = async () => {
+    setBusy(true);
+    setError('');
+    setSaved(false);
+    try {
+      const { data } = await api.post('/planner/generate', { text: brief });
+      setPlan(data.tasks);
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const create = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await Promise.all(plan.map((task) => api.post('/tasks', {
+        ...task,
+        project: 'AI Planner',
+        taskType: 'personal',
+        aiGenerated: true,
+      })));
+      setSaved(true);
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="page-block">
+      <div className="page-heading">
+        <div>
+          <h1>Project planner</h1>
+          <p>Turn a brief into a reviewable task breakdown. Nothing is saved until you confirm it.</p>
+        </div>
+      </div>
+
+      <div className="planner-layout">
+        <section className="panel planner-form">
+          <label className={`upload-zone ${file ? 'has-file' : ''}`}>
+            <input type="file" accept=".txt,.md,.csv,.json" onChange={selectFile} />
+            {file ? (
+              <>
+                <FileText size={22} />
+                <div><b>{file.name}</b><small>Text imported into your brief</small></div>
+                <Check size={19} />
+              </>
+            ) : (
+              <>
+                <Upload size={24} />
+                <b>Choose a text, Markdown, CSV, or JSON file</b>
+                <small>You can also paste the project brief below.</small>
+              </>
+            )}
+          </label>
+
+          <label className="field-label">
+            Project brief
+            <textarea
+              rows="12"
+              value={brief}
+              onChange={(event) => setBrief(event.target.value)}
+              placeholder="Describe the project requirements, outputs, deadlines, and constraints."
+            />
+          </label>
+          {error && <p className="form-error">{error}</p>}
+          <button className="button button-primary button-full" disabled={busy || brief.trim().length < 20} onClick={generate}>
+            {busy ? 'Preparing plan...' : <>Generate plan <ArrowRight size={17} /></>}
+          </button>
+        </section>
+
+        <aside className={`panel plan-preview ${plan.length ? 'generated' : ''}`}>
+          <header className="planner-sheet-header">
+            <span className="planner-sheet-icon" aria-hidden="true"><NotebookPen size={19} /></span>
+            <div>
+              <h2>Draft plan</h2>
+              <p>{plan.length ? `${plan.length} tasks ready to review` : 'Your generated tasks will be organized here'}</p>
+            </div>
+          </header>
+
+          <div className="preview-empty">
+            <KayaMascot size={58} className="planner-kaya-mascot" decorative />
+            <h2>{plan.length ? 'Review your draft' : 'Start with your project brief'}</h2>
+            <p>{plan.length ? 'Edit any task title before adding the plan to your workspace.' : 'Add enough detail about the goal, deadline, and expected output, then generate your plan.'}</p>
+          </div>
+
+          {plan.length > 0 && (
+            <div className="ai-task-list">
+              {plan.map((task, index) => (
+                <article key={index}>
+                  <span>{index + 1}</span>
+                  <div>
+                    <input
+                      aria-label={`Task ${index + 1} title`}
+                      value={task.title}
+                      onChange={(event) => setPlan((current) => current.map((item, itemIndex) => (
+                        itemIndex === index ? { ...item, title: event.target.value } : item
+                      )))}
+                    />
+                    <small>{task.estimatedHours} estimated hours, {task.priority} priority</small>
+                  </div>
+                  <i aria-hidden="true"><Sparkles size={14} /></i>
+                </article>
+              ))}
+              <button className="button button-primary button-full" onClick={create} disabled={busy || saved}>
+                {saved ? 'Tasks created' : 'Create tasks'}
+              </button>
+              {saved && <p className="form-message">Your generated tasks are now in My tasks.</p>}
+            </div>
+          )}
+        </aside>
+      </div>
+    </section>
+  );
+}

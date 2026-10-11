@@ -2,7 +2,6 @@ import { Bell, Bot, CalendarDays, ChevronLeft, ChevronRight, Clock3, CreditCard,
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import Brand from './Brand';
-import ThemeToggle from './ThemeToggle';
 import { SESSION_TIMEOUT_MINUTES, useAuth } from '../auth/AuthContext';
 import { api } from '../lib/api';
 
@@ -88,7 +87,6 @@ export default function AppShell() {
         </nav>
         <div className="sidebar-bottom">
           <NavLink to="/app/settings" data-tooltip="Settings" aria-label={collapsed ? 'Settings' : undefined} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Settings size={18} /><span>Settings</span></NavLink>
-          <ThemeToggle label={!collapsed} />
           <button type="button" className="nav-item sidebar-logout" data-tooltip="Log out" aria-label="Log out" aria-haspopup="dialog" onClick={() => logoutDialog.current?.showModal()}><LogOut size={18} /><span>Log out</span></button>
           <NavLink to="/app/settings" className="profile-mini" data-tooltip={user?.displayName}><span className="avatar avatar-peach">{initials}</span><div><strong>{user?.displayName}</strong><small>{user?.email}</small></div><ChevronRight size={16}/></NavLink>
         </div>
