@@ -33,7 +33,6 @@ export default function PageSkeleton({ variant = 'app' }) {
         <main className="skeleton-auth-layout">
           <section className="skeleton-auth-card">
             <Bone className="skeleton-kicker" /><Bone className="skeleton-auth-title" /><Bone className="skeleton-copy" />
-            <div className="skeleton-social-row"><Bone /><Bone /><Bone /></div>
             <Bone className="skeleton-field" /><Bone className="skeleton-field" /><Bone className="skeleton-submit" />
           </section>
           <Bone className="skeleton-auth-visual" />

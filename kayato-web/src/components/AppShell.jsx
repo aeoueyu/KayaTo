@@ -1,9 +1,9 @@
-import { Bell, Bot, CalendarDays, ChevronLeft, ChevronRight, CreditCard, LayoutDashboard, ListTodo, LogOut, MessageCircle, Search, Settings, Users } from 'lucide-react';
+import { Bell, Bot, CalendarDays, ChevronLeft, ChevronRight, Clock3, CreditCard, LayoutDashboard, ListTodo, LogOut, MessageCircle, Search, Settings, Users } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import Brand from './Brand';
 import ThemeToggle from './ThemeToggle';
-import { useAuth } from '../auth/AuthContext';
+import { SESSION_TIMEOUT_MINUTES, useAuth } from '../auth/AuthContext';
 import { api } from '../lib/api';
 
 const nav = [
@@ -19,9 +19,10 @@ const nav = [
 const mobileNav = [nav[0], nav[1], nav[2], nav[4], nav[6]];
 
 export default function AppShell() {
-  const { user, logout } = useAuth();
+  const { user, logout, sessionWarning, sessionSecondsRemaining, extendSession } = useAuth();
   const navigate = useNavigate();
   const logoutDialog = useRef(null);
+  const sessionDialog = useRef(null);
   const initials = (user?.displayName || 'KayaTo User').split(/\s+/).slice(0,2).map(part=>part[0]).join('').toUpperCase();
   const [teams, setTeams] = useState([]);
   const [teamsStatus, setTeamsStatus] = useState('loading');
@@ -37,6 +38,15 @@ export default function AppShell() {
       .catch(() => { if (active) { setTeams([]); setTeamsStatus('error'); } });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (sessionWarning) {
+      logoutDialog.current?.close();
+      if (!sessionDialog.current?.open) sessionDialog.current?.showModal();
+    } else if (sessionDialog.current?.open) {
+      sessionDialog.current.close();
+    }
+  }, [sessionWarning]);
 
   const toggleSidebar = () => {
     setCollapsed((current) => {
@@ -106,6 +116,17 @@ export default function AppShell() {
         <div className="logout-dialog-actions">
           <form method="dialog"><button className="button button-secondary" autoFocus>Cancel</button></form>
           <button type="button" className="button logout-confirm" onClick={confirmLogout}>Log out</button>
+        </div>
+      </dialog>
+
+      <dialog ref={sessionDialog} className="logout-dialog session-timeout-dialog" aria-labelledby="session-timeout-title" aria-describedby="session-timeout-description" onCancel={(event) => event.preventDefault()}>
+        <div className="logout-dialog-icon session-timeout-icon" aria-hidden="true"><Clock3 size={22} /></div>
+        <h2 id="session-timeout-title">Your session is about to expire</h2>
+        <p id="session-timeout-description">For your security, KayaTo signs you out after {SESSION_TIMEOUT_MINUTES} minutes without activity.</p>
+        <p className="session-countdown" role="timer" aria-label={`${sessionSecondsRemaining} seconds remaining`}><strong>{sessionSecondsRemaining}</strong> seconds remaining</p>
+        <div className="logout-dialog-actions">
+          <button type="button" className="button button-secondary" onClick={() => { logout(); navigate('/login', { replace: true }); }}>Log out now</button>
+          <button type="button" className="button button-primary" onClick={extendSession} autoFocus>Stay signed in</button>
         </div>
       </dialog>
     </div>

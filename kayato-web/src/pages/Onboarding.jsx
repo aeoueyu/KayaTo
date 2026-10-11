@@ -38,13 +38,14 @@ const choices = [
 ];
 const passwordChecks = [
   ["length", "At least 8 characters", (value) => value.length >= 8],
+  ["maxLength", "No more than 64 characters", (value) => value.length > 0 && value.length <= 64],
   ["upper", "One uppercase letter", (value) => /[A-Z]/.test(value)],
   ["lower", "One lowercase letter", (value) => /[a-z]/.test(value)],
   ["number", "One number", (value) => /\d/.test(value)],
   ["symbol", "One symbol", (value) => /[^A-Za-z0-9]/.test(value)],
 ];
 const emailSyntaxIsValid = (email) =>
-  /^[^\s@]+@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/i.test(
+  email.trim().length >= 6 && email.trim().length <= 254 && /^[^\s@]+@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/i.test(
     email.trim(),
   );
 const sanitizePersonName = (value) => {
@@ -369,7 +370,7 @@ export default function Onboarding() {
                 </label>
               </div>
               <small className="name-field-hint" id="name-input-hint">
-                Letters, spaces, periods, and hyphens only.
+                2 to 40 characters each. Letters, spaces, periods, and hyphens only.
               </small>
               <div className="form-grid signup-contact-grid">
                 <label className="field-label">
@@ -400,7 +401,7 @@ export default function Onboarding() {
                       required
                     />
                   </span>
-                  {usernameError ? <small id="signup-username-error" className="match-error" role="alert">{usernameError}</small> : usernameChecking ? <small className="field-status" role="status">Checking username...</small> : <small id="signup-username-hint" className="field-hint">Letters, numbers, and underscores only.</small>}
+                  {usernameError ? <small id="signup-username-error" className="match-error" role="alert">{usernameError}</small> : usernameChecking ? <small className="field-status" role="status">Checking username...</small> : <small id="signup-username-hint" className="field-hint">3 to 24 characters. Lowercase letters, numbers, and underscores only.</small>}
                 </label>
                 <label className="field-label">
                   <span className="field-label-text">
@@ -422,12 +423,15 @@ export default function Onboarding() {
                     }}
                     onBlur={() => void validateEmailDomain()}
                     autoComplete="email"
+                    minLength="6"
+                    maxLength="254"
                     aria-invalid={Boolean(emailError)}
-                    aria-describedby={emailError ? "signup-email-error" : undefined}
+                    aria-describedby={emailError ? "signup-email-error" : "signup-email-hint"}
                     required
                   />
                   {emailError && <small id="signup-email-error" className="match-error" role="alert">{emailError}</small>}
                   {emailChecking && !emailError && <small className="field-status" role="status">Checking email address...</small>}
+                  {!emailError && !emailChecking && <small id="signup-email-hint" className="field-hint">6 to 254 characters.</small>}
                 </label>
               </div>
               <div className="form-grid password-grid">
@@ -449,6 +453,8 @@ export default function Onboarding() {
                         onFocus={() => setPasswordFocused(true)}
                         onBlur={() => setPasswordFocused(false)}
                         autoComplete="new-password"
+                        minLength="8"
+                        maxLength="64"
                         aria-describedby={
                           passwordFocused ? "password-requirements" : undefined
                         }
@@ -503,6 +509,8 @@ export default function Onboarding() {
                         setForm({ ...form, confirmPassword: e.target.value })
                       }
                       autoComplete="new-password"
+                      minLength="8"
+                      maxLength="64"
                       aria-invalid={
                         form.confirmPassword.length > 0 && !passwordsMatch
                       }

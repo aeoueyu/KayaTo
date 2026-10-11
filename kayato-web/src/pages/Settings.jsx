@@ -1,5 +1,266 @@
-import { Save } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import {
+  Bell, Check, Eye, EyeOff, LogOut, Monitor, MonitorCog, Moon,
+  Save, ShieldCheck, Sun, UserRound,
+} from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { errorMessage } from '../lib/api';
-export default function Settings(){const {user,updateUser}=useAuth();const [form,setForm]=useState(user),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);useEffect(()=>setForm(user),[user]);const submit=async e=>{e.preventDefault();setBusy(true);setMessage('');try{await updateUser({displayName:form.displayName,...(form.username?{username:form.username}:{}),timezone:form.timezone,currency:form.currency,primaryUsage:form.primaryUsage});setMessage('Your settings were saved.');}catch(error){setMessage(errorMessage(error));}finally{setBusy(false);}};return <section className="page-block"><div className="page-heading"><div><h1>Settings</h1><p>Manage your profile and workspace preferences.</p></div></div><form className="panel settings-form" onSubmit={submit}>{message&&<p className="form-message" role="status">{message}</p>}<div className="form-grid"><label className="field-label">Display name<input value={form?.displayName||''} onChange={e=>setForm({...form,displayName:e.target.value})} required/></label><label className="field-label">Username<span className="username-field"><span aria-hidden="true">@</span><input value={form?.username||''} onChange={e=>setForm({...form,username:e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,'').slice(0,24)})} minLength="3" maxLength="24" autoComplete="username" spellCheck="false" placeholder="choose_a_username"/></span><small className="field-hint">Used by other people to find you.</small></label><label className="field-label">Email<input value={form?.email||''} disabled/></label><label className="field-label">Timezone<input value={form?.timezone||'Asia/Manila'} onChange={e=>setForm({...form,timezone:e.target.value})}/></label><label className="field-label">Currency<select value={form?.currency||'PHP'} onChange={e=>setForm({...form,currency:e.target.value})}><option value="PHP">PHP</option><option value="USD">USD</option></select></label><label className="field-label">Primary use<select value={form?.primaryUsage||'both'} onChange={e=>setForm({...form,primaryUsage:e.target.value})}><option value="personal">Personal</option><option value="team">Team</option><option value="both">Personal and team</option></select></label></div><div className="settings-actions"><button className="button button-primary" disabled={busy}><Save size={16}/>{busy?'Saving...':'Save changes'}</button></div></form></section>}
+import { api, errorMessage } from '../lib/api';
+import { useTheme } from '../theme/ThemeProvider';
+
+const sections = [
+  { id: 'profile', label: 'Profile', icon: UserRound },
+  { id: 'security', label: 'Password & security', icon: ShieldCheck },
+  { id: 'notifications', label: 'Notifications', icon: Bell },
+  { id: 'appearance', label: 'Appearance', icon: MonitorCog },
+];
+
+const notificationOptions = [
+  { key: 'taskAssignments', title: 'Task assignments', description: 'When someone assigns a task to you.' },
+  { key: 'deadlines', title: 'Deadlines and reminders', description: 'Upcoming due dates and overdue work.' },
+  { key: 'teamMessages', title: 'Team messages', description: 'New messages from your teams and friends.' },
+  { key: 'bills', title: 'Bills and payments', description: 'Reminders before a bill is due.' },
+];
+
+const themeOptions = [
+  { value: 'light', label: 'Light', description: 'Bright and clear', icon: Sun },
+  { value: 'dark', label: 'Dark', description: 'High contrast', icon: Moon },
+  { value: 'system', label: 'System', description: 'Match your device', icon: Monitor },
+];
+
+const capitalizePersonName = (value) => value
+  .replace(/[^\p{L} .-]/gu, '')
+  .replace(/(^|[ .-])(\p{L})/gu, (_match, separator, letter) => `${separator}${letter.toLocaleUpperCase()}`)
+  .slice(0, 40);
+
+function PasswordInput({ id, label, value, onChange, autoComplete, error }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <label className="field-label" htmlFor={id}>
+      <span>{label} <b className="required-mark" aria-hidden="true">*</b></span>
+      <span className="password-field">
+        <input id={id} type={visible ? 'text' : 'password'} value={value} onChange={onChange} minLength="8" maxLength="64" autoComplete={autoComplete} required aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} />
+        <button type="button" onClick={() => setVisible((current) => !current)} aria-label={`${visible ? 'Hide' : 'Show'} ${label.toLowerCase()}`}>
+          {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>
+      </span>
+      {error && <small className="field-error" id={`${id}-error`} role="alert">{error}</small>}
+    </label>
+  );
+}
+
+export default function Settings() {
+  const { user, updateUser, logout } = useAuth();
+  const { themePreference, setThemePreference } = useTheme();
+  const navigate = useNavigate();
+  const logoutDialog = useRef(null);
+  const [activeSection, setActiveSection] = useState('profile');
+  const [status, setStatus] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [busy, setBusy] = useState(false);
+  const initialNameParts = (user?.displayName || '').trim().split(/\s+/);
+  const [profile, setProfile] = useState({
+    firstName: user?.firstName || initialNameParts[0] || '',
+    lastName: user?.lastName || initialNameParts.slice(1).join(' ') || '',
+    username: user?.username || '',
+    timezone: user?.timezone || 'Asia/Manila',
+    currency: user?.currency || 'PHP',
+    primaryUsage: user?.primaryUsage || 'both',
+  });
+  const [notifications, setNotifications] = useState({
+    taskAssignments: user?.notificationPreferences?.taskAssignments ?? true,
+    deadlines: user?.notificationPreferences?.deadlines ?? true,
+    teamMessages: user?.notificationPreferences?.teamMessages ?? true,
+    bills: user?.notificationPreferences?.bills ?? true,
+  });
+  const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+
+  useEffect(() => {
+    if (!user) return;
+    const parts = (user.displayName || '').trim().split(/\s+/);
+    setProfile({
+      firstName: user.firstName || parts[0] || '',
+      lastName: user.lastName || parts.slice(1).join(' ') || '',
+      username: user.username || '',
+      timezone: user.timezone || 'Asia/Manila',
+      currency: user.currency || 'PHP',
+      primaryUsage: user.primaryUsage || 'both',
+    });
+    setNotifications({
+      taskAssignments: user.notificationPreferences?.taskAssignments ?? true,
+      deadlines: user.notificationPreferences?.deadlines ?? true,
+      teamMessages: user.notificationPreferences?.teamMessages ?? true,
+      bills: user.notificationPreferences?.bills ?? true,
+    });
+  }, [user]);
+
+  const showStatus = (type, message) => setStatus({ type, message });
+  const selectSection = (id) => { setActiveSection(id); setStatus(null); setFieldErrors({}); };
+  const clearFieldError = (field) => setFieldErrors((current) => {
+    if (!current[field]) return current;
+    const next = { ...current };
+    delete next[field];
+    return next;
+  });
+
+  const saveProfile = async (event) => {
+    event.preventDefault();
+    const errors = {};
+    if (!profile.firstName.trim()) errors.firstName = 'Enter your first name.';
+    else if (profile.firstName.trim().length < 2) errors.firstName = 'First name must have at least 2 characters.';
+    if (!profile.lastName.trim()) errors.lastName = 'Enter your last name.';
+    else if (profile.lastName.trim().length < 2) errors.lastName = 'Last name must have at least 2 characters.';
+    if (!profile.username.trim()) errors.username = 'Choose a username.';
+    else if (!/^[a-z0-9_]{3,24}$/.test(profile.username)) errors.username = 'Use 3 to 24 lowercase letters, numbers, or underscores.';
+    setFieldErrors(errors);
+    if (Object.keys(errors).length) return;
+    setBusy(true); setStatus(null);
+    try {
+      await updateUser(profile);
+      showStatus('success', 'Your profile changes were saved.');
+    } catch (error) {
+      showStatus('error', errorMessage(error));
+    } finally { setBusy(false); }
+  };
+
+  const savePassword = async (event) => {
+    event.preventDefault();
+    setStatus(null);
+    const errors = {};
+    if (!passwords.currentPassword) errors.currentPassword = 'Enter your current password.';
+    if (!passwords.newPassword) errors.newPassword = 'Enter a new password.';
+    else if (!(passwords.newPassword.length >= 8 && passwords.newPassword.length <= 64 && /[A-Z]/.test(passwords.newPassword) && /[a-z]/.test(passwords.newPassword) && /\d/.test(passwords.newPassword) && /[^A-Za-z0-9]/.test(passwords.newPassword))) errors.newPassword = 'Meet all password requirements before continuing.';
+    if (!passwords.confirmPassword) errors.confirmPassword = 'Confirm your new password.';
+    else if (passwords.newPassword !== passwords.confirmPassword) errors.confirmPassword = 'Passwords do not match.';
+    setFieldErrors(errors);
+    if (Object.keys(errors).length) return;
+    setBusy(true);
+    try {
+      const { data } = await api.post('/auth/change-password', { currentPassword: passwords.currentPassword, newPassword: passwords.newPassword });
+      setPasswords({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      showStatus('success', data.message || 'Your password was changed.');
+    } catch (error) {
+      showStatus('error', errorMessage(error));
+    } finally { setBusy(false); }
+  };
+
+  const saveNotifications = async () => {
+    setBusy(true); setStatus(null);
+    try {
+      await updateUser({ notificationPreferences: notifications });
+      showStatus('success', 'Notification preferences were saved.');
+    } catch (error) {
+      showStatus('error', errorMessage(error));
+    } finally { setBusy(false); }
+  };
+
+  const confirmLogout = () => {
+    logoutDialog.current?.close();
+    logout();
+    navigate('/login', { replace: true });
+  };
+
+  const rules = [
+    ['8 to 64 characters', passwords.newPassword.length >= 8 && passwords.newPassword.length <= 64],
+    ['One uppercase letter', /[A-Z]/.test(passwords.newPassword)],
+    ['One lowercase letter', /[a-z]/.test(passwords.newPassword)],
+    ['One number', /\d/.test(passwords.newPassword)],
+    ['One symbol', /[^A-Za-z0-9]/.test(passwords.newPassword)],
+  ];
+  const profileIsValid = profile.firstName.trim().length >= 2
+    && profile.lastName.trim().length >= 2
+    && /\p{L}/u.test(profile.firstName)
+    && /\p{L}/u.test(profile.lastName)
+    && /^[\p{L} .-]{2,40}$/u.test(profile.firstName.trim())
+    && /^[\p{L} .-]{2,40}$/u.test(profile.lastName.trim())
+    && /^[a-z0-9_]{3,24}$/.test(profile.username);
+  const savedNameParts = (user?.displayName || '').trim().split(/\s+/);
+  const savedProfile = {
+    firstName: user?.firstName || savedNameParts[0] || '',
+    lastName: user?.lastName || savedNameParts.slice(1).join(' ') || '',
+    username: user?.username || '',
+    timezone: user?.timezone || 'Asia/Manila',
+    currency: user?.currency || 'PHP',
+    primaryUsage: user?.primaryUsage || 'both',
+  };
+  const profileHasChanges = Object.keys(savedProfile).some((key) => profile[key] !== savedProfile[key]);
+  const passwordIsValid = passwords.currentPassword.length >= 8
+    && rules.every(([, met]) => met)
+    && passwords.confirmPassword.length > 0
+    && passwords.newPassword === passwords.confirmPassword;
+  const savedNotifications = {
+    taskAssignments: user?.notificationPreferences?.taskAssignments ?? true,
+    deadlines: user?.notificationPreferences?.deadlines ?? true,
+    teamMessages: user?.notificationPreferences?.teamMessages ?? true,
+    bills: user?.notificationPreferences?.bills ?? true,
+  };
+  const notificationsHaveChanges = Object.keys(savedNotifications).some((key) => notifications[key] !== savedNotifications[key]);
+  const initials = (user?.displayName || 'KayaTo User').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+
+  return (
+    <section className="page-block settings-page">
+      <div className="page-heading settings-heading"><div><h1>Account settings</h1><p>Manage your personal details, security, notifications, and display.</p></div></div>
+      <div className="account-settings-layout">
+        <nav className="settings-section-nav" aria-label="Account settings sections">
+          <div className="settings-user-summary"><span className="avatar avatar-peach">{initials}</span><span><strong>{user?.displayName}</strong><small>@{user?.username || 'username'}</small></span></div>
+          <div className="settings-nav-items">
+            {sections.map(({ id, label, icon: Icon }) => <button key={id} type="button" className={activeSection === id ? 'active' : ''} onClick={() => selectSection(id)} aria-current={activeSection === id ? 'page' : undefined}><Icon size={18} /><span>{label}</span></button>)}
+          </div>
+          <button type="button" className="settings-logout-link" onClick={() => logoutDialog.current?.showModal()}><LogOut size={18} /><span>Log out</span></button>
+        </nav>
+
+        <div className="settings-content">
+          {status && <p className={`settings-status ${status.type}`} role={status.type === 'error' ? 'alert' : 'status'}>{status.type === 'success' && <Check size={17} />}{status.message}</p>}
+
+          {activeSection === 'profile' && <form className="settings-section" onSubmit={saveProfile} noValidate>
+            <header><div className="settings-section-icon"><UserRound size={21} /></div><div><h2>Profile information</h2><p>Keep your account details accurate so teammates and friends can identify you.</p></div></header>
+            <div className="settings-section-body form-grid">
+              <label className="field-label"><span>First name <b className="required-mark">*</b></span><input value={profile.firstName} onChange={(event) => { clearFieldError('firstName'); setProfile({ ...profile, firstName: capitalizePersonName(event.target.value) }); }} minLength="2" maxLength="40" autoComplete="given-name" required aria-invalid={Boolean(fieldErrors.firstName)} aria-describedby={fieldErrors.firstName ? 'first-name-error' : undefined} />{fieldErrors.firstName && <small className="field-error" id="first-name-error" role="alert">{fieldErrors.firstName}</small>}</label>
+              <label className="field-label"><span>Last name <b className="required-mark">*</b></span><input value={profile.lastName} onChange={(event) => { clearFieldError('lastName'); setProfile({ ...profile, lastName: capitalizePersonName(event.target.value) }); }} minLength="2" maxLength="40" autoComplete="family-name" required aria-invalid={Boolean(fieldErrors.lastName)} aria-describedby={fieldErrors.lastName ? 'last-name-error' : undefined} />{fieldErrors.lastName && <small className="field-error" id="last-name-error" role="alert">{fieldErrors.lastName}</small>}</label>
+              <label className="field-label"><span>Username <b className="required-mark">*</b></span><span className="username-field"><span aria-hidden="true">@</span><input value={profile.username} onChange={(event) => { clearFieldError('username'); setProfile({ ...profile, username: event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 24) }); }} minLength="3" maxLength="24" autoComplete="username" spellCheck="false" required aria-invalid={Boolean(fieldErrors.username)} aria-describedby={fieldErrors.username ? 'settings-username-error' : 'settings-username-hint'} /></span>{fieldErrors.username ? <small className="field-error" id="settings-username-error" role="alert">{fieldErrors.username}</small> : <small className="field-hint" id="settings-username-hint">3 to 24 lowercase letters, numbers, or underscores.</small>}</label>
+              <label className="field-label"><span>Email address</span><input value={user?.email || ''} disabled /><small className="field-hint">Verified account email. Contact support to change it.</small></label>
+              <label className="field-label"><span>Timezone</span><select value={profile.timezone} onChange={(event) => setProfile({ ...profile, timezone: event.target.value })}><option value="Asia/Manila">Asia/Manila</option><option value="Asia/Singapore">Asia/Singapore</option><option value="UTC">UTC</option><option value="America/New_York">America/New York</option></select></label>
+              <label className="field-label"><span>Currency</span><select value={profile.currency} onChange={(event) => setProfile({ ...profile, currency: event.target.value })}><option value="PHP">PHP, Philippine peso</option><option value="USD">USD, US dollar</option></select></label>
+              <label className="field-label settings-wide-field"><span>Primary use</span><select value={profile.primaryUsage} onChange={(event) => setProfile({ ...profile, primaryUsage: event.target.value })}><option value="personal">Personal productivity</option><option value="team">Team collaboration</option><option value="both">Personal and team</option></select></label>
+            </div>
+            <footer><small className="settings-action-note">{!profileIsValid ? 'Complete all required fields.' : profileHasChanges ? 'Your profile has unsaved changes.' : 'No unsaved changes.'}</small><button className="button button-primary" disabled={busy || !profileIsValid || !profileHasChanges}><Save size={16} />{busy ? 'Saving...' : 'Save profile'}</button></footer>
+          </form>}
+
+          {activeSection === 'security' && <form className="settings-section" onSubmit={savePassword} noValidate>
+            <header><div className="settings-section-icon"><ShieldCheck size={21} /></div><div><h2>Password & security</h2><p>Use a unique password you do not use for another account.</p></div></header>
+            <div className="settings-section-body security-fields">
+              <PasswordInput id="current-password" label="Current password" value={passwords.currentPassword} onChange={(event) => { clearFieldError('currentPassword'); setPasswords({ ...passwords, currentPassword: event.target.value }); }} autoComplete="current-password" error={fieldErrors.currentPassword} />
+              <div className="security-password-grid">
+                <PasswordInput id="new-password" label="New password" value={passwords.newPassword} onChange={(event) => { clearFieldError('newPassword'); clearFieldError('confirmPassword'); setPasswords({ ...passwords, newPassword: event.target.value }); }} autoComplete="new-password" error={fieldErrors.newPassword} />
+                <PasswordInput id="confirm-new-password" label="Confirm new password" value={passwords.confirmPassword} onChange={(event) => { clearFieldError('confirmPassword'); setPasswords({ ...passwords, confirmPassword: event.target.value }); }} autoComplete="new-password" error={fieldErrors.confirmPassword} />
+              </div>
+              {passwords.newPassword && <ul className="password-checklist settings-password-checklist" aria-label="Password requirements">{rules.map(([label, met]) => <li key={label} className={met ? 'met' : ''}><Check size={14} />{label}</li>)}</ul>}
+              {passwords.confirmPassword && !fieldErrors.confirmPassword && <small className={passwords.newPassword === passwords.confirmPassword ? 'field-success' : 'field-error'}>{passwords.newPassword === passwords.confirmPassword ? 'Passwords match.' : 'Passwords do not match.'}</small>}
+            </div>
+            <footer><small className="settings-action-note">{passwordIsValid ? 'Your new password is ready to save.' : 'Complete all password requirements.'}</small><button className="button button-primary" disabled={busy || !passwordIsValid}><ShieldCheck size={16} />{busy ? 'Updating...' : 'Update password'}</button></footer>
+          </form>}
+
+          {activeSection === 'notifications' && <section className="settings-section">
+            <header><div className="settings-section-icon"><Bell size={21} /></div><div><h2>Notification preferences</h2><p>Choose which account activity should get your attention.</p></div></header>
+            <div className="settings-section-body settings-preference-list">
+              {notificationOptions.map((option) => <label className="preference-row" key={option.key}><span><strong>{option.title}</strong><small>{option.description}</small></span><input type="checkbox" checked={notifications[option.key]} onChange={(event) => setNotifications({ ...notifications, [option.key]: event.target.checked })} /><span className="settings-switch" aria-hidden="true" /></label>)}
+            </div>
+            <footer><small className="settings-action-note">{notificationsHaveChanges ? 'Your notification choices have changed.' : 'No unsaved changes.'}</small><button type="button" className="button button-primary" disabled={busy || !notificationsHaveChanges} onClick={saveNotifications}><Save size={16} />{busy ? 'Saving...' : 'Save notifications'}</button></footer>
+          </section>}
+
+          {activeSection === 'appearance' && <section className="settings-section">
+            <header><div className="settings-section-icon"><MonitorCog size={21} /></div><div><h2>Appearance</h2><p>Select how KayaTo looks on this device.</p></div></header>
+            <div className="settings-section-body"><fieldset className="appearance-options"><legend>Color theme</legend>{themeOptions.map(({ value, label, description, icon: Icon }) => <label key={value} className={themePreference === value ? 'selected' : ''}><input type="radio" name="theme" value={value} checked={themePreference === value} onChange={() => setThemePreference(value)} /><Icon size={20} /><span><strong>{label}</strong><small>{description}</small></span><span className="theme-radio" aria-hidden="true">{themePreference === value && <Check size={13} />}</span></label>)}</fieldset><p className="appearance-note">Your theme choice is saved in this browser and applied immediately.</p></div>
+          </section>}
+        </div>
+      </div>
+
+      <dialog ref={logoutDialog} className="logout-dialog" aria-labelledby="settings-logout-title" aria-describedby="settings-logout-description">
+        <div className="logout-dialog-icon" aria-hidden="true"><LogOut size={22} /></div>
+        <h2 id="settings-logout-title">Log out of KayaTo?</h2>
+        <p id="settings-logout-description">You will need to enter your email and password to access your workspace again.</p>
+        <div className="logout-dialog-actions"><form method="dialog"><button className="button button-secondary" autoFocus>Cancel</button></form><button type="button" className="button logout-confirm" onClick={confirmLogout}>Log out</button></div>
+      </dialog>
+    </section>
+  );
+}

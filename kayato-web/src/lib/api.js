@@ -17,11 +17,15 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const hadActiveToken = Boolean(window.localStorage.getItem('kayato-token') || window.sessionStorage.getItem('kayato-token'));
+    if (error.response?.status === 401 && hadActiveToken) {
       window.localStorage.removeItem('kayato-token');
       window.localStorage.removeItem('kayato-user');
+      window.localStorage.removeItem('kayato-last-activity');
       window.sessionStorage.removeItem('kayato-token');
       window.sessionStorage.removeItem('kayato-user');
+      window.sessionStorage.removeItem('kayato-last-activity');
+      window.sessionStorage.setItem('kayato-auth-notice', 'Your session expired. Log in to continue.');
       if (window.location.pathname.startsWith('/app')) window.location.assign('/login');
     }
     return Promise.reject(error);

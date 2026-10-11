@@ -5,6 +5,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { resolve4, resolve6, resolveMx } from 'node:dns/promises';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
@@ -15,8 +16,10 @@ const isProduction = process.env.NODE_ENV === 'production';
 const port = Number(process.env.PORT) || 5000;
 const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI;
 const jwtSecret = process.env.JWT_SECRET || (!isProduction ? 'kayato-local-development-secret' : '');
+const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '7d';
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const emailFrom = process.env.EMAIL_FROM || 'KayaTo <onboarding@resend.dev>';
+const emailLogoContent = readFileSync(new URL('./assets/kayato-email-logo.png', import.meta.url)).toString('base64');
 const configuredOrigins = (process.env.CLIENT_URL || 'http://localhost:5173,http://127.0.0.1:5173')
   .split(',').map((value) => value.trim()).filter(Boolean);
 
@@ -33,19 +36,17 @@ const allowOrigin = (origin, callback) => {
 const io = new Server(httpServer, { cors: { origin: allowOrigin, credentials: true } });
 
 app.disable('x-powered-by');
+app.set('trust proxy', 1);
 app.use(cors({ origin: allowOrigin, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: false, limit: '64kb' }));
 
-const providerSchema = new mongoose.Schema({
-  provider: { type: String, enum: ['local', 'google', 'facebook', 'apple'], required: true },
-  providerUserId: String,
-}, { _id: false });
 const userSchema = new mongoose.Schema({
-  firstName: { type: String, trim: true, maxlength: 40 },
-  lastName: { type: String, trim: true, maxlength: 40 },
+  firstName: { type: String, trim: true, minlength: 2, maxlength: 40 },
+  lastName: { type: String, trim: true, minlength: 2, maxlength: 40 },
   displayName: { type: String, required: true, trim: true, maxlength: 80 },
   username: { type: String, unique: true, sparse: true, lowercase: true, trim: true, minlength: 3, maxlength: 24, match: /^[a-z0-9_]+$/ },
-  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true, minlength: 6, maxlength: 254 },
   passwordHash: { type: String, required: true, select: false },
   profilePicture: String,
   timezone: { type: String, default: 'Asia/Manila' },
@@ -56,7 +57,6 @@ const userSchema = new mongoose.Schema({
     taskAssignments: { type: Boolean, default: true }, deadlines: { type: Boolean, default: true },
     teamMessages: { type: Boolean, default: true }, bills: { type: Boolean, default: true },
   },
-  authProviders: { type: [providerSchema], default: [{ provider: 'local' }] },
 }, { timestamps: true });
 const memberSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -125,7 +125,6 @@ const signupOtpSchema = new mongoose.Schema({
   lastSentAt: { type: Date, required: true },
   attempts: { type: Number, default: 0 },
 }, { timestamps: true });
-
 const User = mongoose.model('User', userSchema);
 const Team = mongoose.model('Team', teamSchema);
 const Task = mongoose.model('Task', taskSchema);
@@ -136,7 +135,7 @@ const Friendship = mongoose.model('Friendship', friendshipSchema);
 const SignupOtp = mongoose.model('SignupOtp', signupOtpSchema);
 
 const publicUser = (user) => ({ id: String(user._id), firstName: user.firstName, lastName: user.lastName, displayName: user.displayName, username: user.username || '', email: user.email, timezone: user.timezone, currency: user.currency, primaryUsage: user.primaryUsage, onboardingCompleted: user.onboardingCompleted, notificationPreferences: user.notificationPreferences });
-const signToken = (user) => jwt.sign({ id: user._id, email: user.email }, jwtSecret, { expiresIn: '7d' });
+const signToken = (user) => jwt.sign({ id: user._id, email: user.email }, jwtSecret, { expiresIn: jwtExpiresIn });
 const normalizeEmail = (value = '') => value.trim().toLowerCase();
 const normalizeUsername = (value = '') => String(value).trim().replace(/^@+/, '').toLowerCase();
 const usernameIsValid = (value) => /^[a-z0-9_]{3,24}$/.test(value);
@@ -145,7 +144,7 @@ const personNameIsValid = (value) => value.length >= 2 && value.length <= 40 && 
 const normalizePersonName = (value = '') => String(value).trim().replace(/\s+/g, ' ').replace(/(^|[ .-])(\p{L})/gu, (_match, separator, letter) => `${separator}${letter.toLocaleUpperCase()}`);
 const emailDomainCache = new Map();
 const emailSyntaxIsValid = (email) => {
-  if (email.length > 254 || email.includes('..')) return false;
+  if (email.length < 6 || email.length > 254 || email.includes('..')) return false;
   const match = email.match(/^([a-z0-9.!#$%&'*+/=?^_`{|}~-]+)@([a-z0-9.-]+)$/i);
   if (!match || match[1].length > 64 || match[1].startsWith('.') || match[1].endsWith('.')) return false;
   const labels = match[2].split('.');
@@ -190,7 +189,7 @@ async function canAccessConversation(conversation, userId) {
 }
 function cleanUpdate(body, allowed) { return Object.fromEntries(Object.entries(body).filter(([key]) => allowed.includes(key))); }
 const otpHash = (email, code) => createHash('sha256').update(`${email}:${code}:${jwtSecret}`).digest('hex');
-const passwordIsStrong = (password) => password.length >= 8 && /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
+const passwordIsStrong = (password) => password.length >= 8 && password.length <= 64 && /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
 const safeEqual = (left, right) => { const a = Buffer.from(left); const b = Buffer.from(right); return a.length === b.length && timingSafeEqual(a, b); };
 const escapeHtml = (value = '') => String(value).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
 const buildSignupOtpEmail = (code) => {
@@ -207,7 +206,7 @@ const buildSignupOtpEmail = (code) => {
       <title>Verify your KayaTo account</title>
       <style>
         @media only screen and (max-width:620px){.email-shell{padding:20px 8px!important}.email-card{width:100%!important}.email-body{padding:32px 16px!important}.otp-table{width:100%!important}.code-cell{width:14%!important;height:52px!important;font-size:22px!important;line-height:52px!important}.code-spacer{width:3%!important}}
-        @media (prefers-color-scheme:dark){.email-bg{background:#11131d!important}.email-card{background:#1a1e2b!important;border-color:#343a4d!important}.email-heading,.email-code-label,.brand-ink{color:#f5f6fb!important}.brand-ruby{color:#ff8a99!important}.email-copy{color:#d9ddea!important}.email-muted{color:#aeb6c9!important}.code-cell{background:#232838!important;border-color:#42495f!important;color:#f5f6fb!important}.email-divider{border-color:#343a4d!important}.info-panel{background:#123a38!important;border-color:#2b7069!important}.info-title{color:#8ce1d7!important}.info-copy{color:#c4e7e3!important}}
+        @media (prefers-color-scheme:dark){.email-bg{background:#11131d!important}.email-card{background:#1a1e2b!important;border-color:#343a4d!important}.email-heading,.email-code-label{color:#f5f6fb!important}.email-copy{color:#d9ddea!important}.email-muted{color:#aeb6c9!important}.code-cell{background:#232838!important;border-color:#42495f!important;color:#f5f6fb!important}.email-divider{border-color:#343a4d!important}.email-logo-wrap{background:#f5f4f2!important}.info-panel{background:#123a38!important;border-color:#2b7069!important}.info-title{color:#8ce1d7!important}.info-copy{color:#c4e7e3!important}}
       </style>
     </head>
     <body class="email-bg" style="margin:0;padding:0;background:#f2f4fb;">
@@ -220,7 +219,15 @@ const buildSignupOtpEmail = (code) => {
                 <td style="padding:22px 32px;border-bottom:1px solid #d6dbe8;" class="email-divider">
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                     <tr>
-                      <td class="email-heading" style="color:#1f2438;font-family:Arial,Helvetica,sans-serif;font-size:20px;font-weight:800;letter-spacing:-0.3px;"><span class="brand-ink">K</span><span class="brand-ruby" style="color:#8f0016;">a</span><span class="brand-ink">yaTo</span></td>
+                      <td>
+                        <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                          <tr>
+                            <td class="email-logo-wrap" style="padding:6px 9px;background:#f5f4f2;border-radius:8px;">
+                              <img src="cid:kayato-logo" width="144" alt="KayaTo" style="display:block;width:144px;max-width:144px;height:auto;border:0;outline:none;text-decoration:none;">
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
                       <td align="right" class="email-muted" style="color:#59627a;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;">Verify your email</td>
                     </tr>
                   </table>
@@ -298,6 +305,7 @@ app.post('/api/auth/register/request-otp', otpLimiter, async (req, res, next) =>
       from: emailFrom, to: email, subject: `${code} is your KayaTo verification code`,
       html: buildSignupOtpEmail(code),
       text: `Verify your KayaTo account\n\nYour verification code is ${code}.\n\nThis code expires in 10 minutes. Keep it private. If you did not request it, you can safely ignore this email.`,
+      attachments: [{ content: emailLogoContent, filename: 'kayato-logo.png', contentType: 'image/png', contentId: 'kayato-logo' }],
     }, { idempotencyKey: `signup-otp/${email}/${Math.floor(Date.now() / 60_000)}` });
     if (error) { await SignupOtp.deleteOne({ email }); throw new Error(error.message || 'Resend could not send the verification email.'); }
     res.json({ message: 'Verification code sent.', expiresInSeconds: 600, resendAfterSeconds: 60 });
@@ -306,11 +314,11 @@ app.post('/api/auth/register/request-otp', otpLimiter, async (req, res, next) =>
 app.post('/api/auth/register/verify', otpLimiter, async (req, res, next) => {
   try {
     const firstName = normalizePersonName(req.body.firstName); const lastName = normalizePersonName(req.body.lastName); const displayName = `${firstName} ${lastName}`.trim(); const username = normalizeUsername(req.body.username); const email = normalizeEmail(req.body.email); const password = String(req.body.password || ''); const code = String(req.body.code || '').trim();
-    if (!personNameIsValid(firstName)) return res.status(400).json({ message: 'First name may only contain letters, spaces, periods, and hyphens.' });
-    if (!personNameIsValid(lastName)) return res.status(400).json({ message: 'Last name may only contain letters, spaces, periods, and hyphens.' });
+    if (!personNameIsValid(firstName)) return res.status(400).json({ message: 'First name must have 2 to 40 characters using letters, spaces, periods, or hyphens.' });
+    if (!personNameIsValid(lastName)) return res.status(400).json({ message: 'Last name must have 2 to 40 characters using letters, spaces, periods, or hyphens.' });
     if (!usernameIsValid(username)) return res.status(400).json({ message: 'Use 3 to 24 lowercase letters, numbers, or underscores for your username.' });
     if (!emailSyntaxIsValid(email)) return res.status(400).json({ message: 'Enter a valid email address with a complete domain.' });
-    if (!passwordIsStrong(password)) return res.status(400).json({ message: 'Password must have at least 8 characters, with uppercase, lowercase, number, and symbol.' });
+    if (!passwordIsStrong(password)) return res.status(400).json({ message: 'Password must have 8 to 64 characters, with uppercase, lowercase, number, and symbol.' });
     if (!/^\d{6}$/.test(code)) return res.status(400).json({ message: 'Enter the 6-digit verification code.' });
     if (await User.exists({ email })) return res.status(409).json({ message: 'An account already uses this email address.' });
     if (await User.exists({ username })) return res.status(409).json({ message: 'This username is already taken.' });
@@ -336,13 +344,39 @@ app.get('/api/auth/me', requireAuth, async (req, res, next) => {
 });
 app.patch('/api/auth/me', requireAuth, async (req, res, next) => {
   try {
-    const update = cleanUpdate(req.body, ['displayName', 'username', 'timezone', 'currency', 'primaryUsage', 'onboardingCompleted', 'notificationPreferences']);
+    const update = cleanUpdate(req.body, ['firstName', 'lastName', 'displayName', 'username', 'timezone', 'currency', 'primaryUsage', 'onboardingCompleted', 'notificationPreferences']);
+    if (Object.hasOwn(update, 'firstName') || Object.hasOwn(update, 'lastName')) {
+      const currentUser = await User.findById(req.user.id);
+      if (!currentUser) return res.status(404).json({ message: 'Account not found.' });
+      const firstName = normalizePersonName(update.firstName ?? currentUser.firstName ?? '');
+      const lastName = normalizePersonName(update.lastName ?? currentUser.lastName ?? '');
+      if (!personNameIsValid(firstName)) return res.status(400).json({ message: 'First name must have 2 to 40 characters using letters, spaces, periods, or hyphens.' });
+      if (!personNameIsValid(lastName)) return res.status(400).json({ message: 'Last name must have 2 to 40 characters using letters, spaces, periods, or hyphens.' });
+      update.firstName = firstName;
+      update.lastName = lastName;
+      update.displayName = `${firstName} ${lastName}`;
+    }
     if (Object.hasOwn(update, 'username')) {
       update.username = normalizeUsername(update.username);
       if (!usernameIsValid(update.username)) return res.status(400).json({ message: 'Use 3 to 24 lowercase letters, numbers, or underscores for your username.' });
       if (await User.exists({ username: update.username, _id: { $ne: req.user.id } })) return res.status(409).json({ message: 'This username is already taken.' });
     }
     const user = await User.findByIdAndUpdate(req.user.id, update, { new: true, runValidators: true }); res.json(publicUser(user));
+  } catch (error) { next(error); }
+});
+
+app.post('/api/auth/change-password', requireAuth, async (req, res, next) => {
+  try {
+    const currentPassword = String(req.body.currentPassword || '');
+    const newPassword = String(req.body.newPassword || '');
+    const user = await User.findById(req.user.id).select('+passwordHash');
+    if (!user) return res.status(404).json({ message: 'Account not found.' });
+    if (!(await bcrypt.compare(currentPassword, user.passwordHash))) return res.status(400).json({ message: 'Your current password is incorrect.' });
+    if (!passwordIsStrong(newPassword)) return res.status(400).json({ message: 'New password must have 8 to 64 characters, with uppercase, lowercase, number, and symbol.' });
+    if (await bcrypt.compare(newPassword, user.passwordHash)) return res.status(400).json({ message: 'Choose a password different from your current password.' });
+    user.passwordHash = await bcrypt.hash(newPassword, 12);
+    await user.save();
+    res.json({ message: 'Your password was changed.' });
   } catch (error) { next(error); }
 });
 
