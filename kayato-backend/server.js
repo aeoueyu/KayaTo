@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 import { Server } from 'socket.io';
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -17,9 +17,19 @@ const port = Number(process.env.PORT) || 5000;
 const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI;
 const jwtSecret = process.env.JWT_SECRET || (!isProduction ? 'kayato-local-development-secret' : '');
 const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '7d';
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-const emailFrom = process.env.EMAIL_FROM || 'KayaTo <onboarding@resend.dev>';
-const emailLogoContent = readFileSync(new URL('./assets/kayato-email-logo.png', import.meta.url)).toString('base64');
+const gmailUser = process.env.GMAIL_USER?.trim();
+const gmailAppPassword = process.env.GMAIL_APP_PASSWORD?.replace(/\s+/g, '');
+const mailer = gmailUser && gmailAppPassword ? nodemailer.createTransport({
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true,
+  auth: { user: gmailUser, pass: gmailAppPassword },
+  connectionTimeout: 10_000,
+  greetingTimeout: 10_000,
+  socketTimeout: 20_000,
+}) : null;
+const emailFrom = process.env.EMAIL_FROM?.trim() || (gmailUser ? `KayaTo <${gmailUser}>` : '');
+const emailLogoContent = readFileSync(new URL('./assets/kayato-email-logo.png', import.meta.url));
 const configuredOrigins = (process.env.CLIENT_URL || 'http://localhost:5173,http://127.0.0.1:5173')
   .split(',').map((value) => value.trim()).filter(Boolean);
 
@@ -296,18 +306,25 @@ app.post('/api/auth/register/request-otp', otpLimiter, async (req, res, next) =>
     if (domainStatus === 'invalid') return res.status(400).json({ message: 'This email domain cannot receive messages. Check the address and try again.' });
     if (domainStatus === 'unavailable') return res.status(503).json({ message: 'We could not verify the email domain right now. Please try again.' });
     if (await User.exists({ email })) return res.status(409).json({ message: 'An account already uses this email address.' });
-    if (!resend) return res.status(503).json({ message: 'Email verification is not configured yet. Add RESEND_API_KEY to the backend .env file.' });
+    if (!mailer) return res.status(503).json({ message: 'Email verification is not configured yet. Add GMAIL_USER and GMAIL_APP_PASSWORD to the backend environment.' });
     const existing = await SignupOtp.findOne({ email });
     if (existing && Date.now() - existing.lastSentAt.getTime() < 60_000) return res.status(429).json({ message: 'Please wait 60 seconds before requesting another code.' });
     const code = String(randomInt(100000, 1_000_000));
     await SignupOtp.findOneAndUpdate({ email }, { codeHash: otpHash(email, code), expiresAt: new Date(Date.now() + 10 * 60_000), lastSentAt: new Date(), attempts: 0 }, { upsert: true, runValidators: true });
-    const { error } = await resend.emails.send({
-      from: emailFrom, to: email, subject: `${code} is your KayaTo verification code`,
-      html: buildSignupOtpEmail(code),
-      text: `Verify your KayaTo account\n\nYour verification code is ${code}.\n\nThis code expires in 10 minutes. Keep it private. If you did not request it, you can safely ignore this email.`,
-      attachments: [{ content: emailLogoContent, filename: 'kayato-logo.png', contentType: 'image/png', contentId: 'kayato-logo' }],
-    }, { idempotencyKey: `signup-otp/${email}/${Math.floor(Date.now() / 60_000)}` });
-    if (error) { await SignupOtp.deleteOne({ email }); throw new Error(error.message || 'Resend could not send the verification email.'); }
+    try {
+      await mailer.sendMail({
+        from: emailFrom,
+        to: email,
+        subject: `${code} is your KayaTo verification code`,
+        html: buildSignupOtpEmail(code),
+        text: `Verify your KayaTo account\n\nYour verification code is ${code}.\n\nThis code expires in 10 minutes. Keep it private. If you did not request it, you can safely ignore this email.`,
+        attachments: [{ content: emailLogoContent, filename: 'kayato-logo.png', contentType: 'image/png', cid: 'kayato-logo' }],
+      });
+    } catch (emailError) {
+      await SignupOtp.deleteOne({ email });
+      console.error(`Gmail OTP delivery failed: ${emailError.message}`);
+      return res.status(502).json({ message: 'We could not send the verification email. Check the Gmail address and App Password configured on the server.' });
+    }
     res.json({ message: 'Verification code sent.', expiresInSeconds: 600, resendAfterSeconds: 60 });
   } catch (error) { next(error); }
 });
