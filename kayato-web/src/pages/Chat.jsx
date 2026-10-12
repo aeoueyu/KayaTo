@@ -2,10 +2,9 @@ import {
   Check, ChevronLeft, ChevronRight, Hash, MessageCircle, Search, Send, Sparkles, UserPlus, Users, X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { io } from 'socket.io-client';
 import { useAuth } from '../auth/AuthContext';
 import KayaMascot from '../components/KayaMascot';
-import { api, errorMessage, SOCKET_URL } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 
 const emptyFriends = { friends: [], incoming: [], outgoing: [] };
 const personId = (person) => String(person?._id || person?.id || '');
@@ -57,13 +56,27 @@ export default function Chat() {
 
   useEffect(() => {
     if (!active) { setMessages([]); return undefined; }
+    let disposed = false;
+    let requestInFlight = false;
     setError(''); setMessages([]); setMessagesLoading(true);
-    api.get(`/conversations/${active._id}/messages`).then(({ data }) => setMessages(data)).catch((requestError) => setError(errorMessage(requestError))).finally(() => setMessagesLoading(false));
-    const token = window.localStorage.getItem('kayato-token') || window.sessionStorage.getItem('kayato-token');
-    const socket = io(SOCKET_URL, { auth: { token } });
-    socket.emit('conversation:join', active._id);
-    socket.on('message:new', (message) => setMessages((current) => current.some((item) => item._id === message._id) ? current : [...current, message]));
-    return () => socket.disconnect();
+
+    const loadMessages = async (initial = false) => {
+      if (requestInFlight) return;
+      requestInFlight = true;
+      try {
+        const { data } = await api.get(`/conversations/${active._id}/messages`);
+        if (!disposed) setMessages(data);
+      } catch (requestError) {
+        if (!disposed && initial) setError(errorMessage(requestError));
+      } finally {
+        requestInFlight = false;
+        if (!disposed && initial) setMessagesLoading(false);
+      }
+    };
+
+    loadMessages(true);
+    const poller = window.setInterval(() => loadMessages(false), 3_000);
+    return () => { disposed = true; window.clearInterval(poller); };
   }, [active?._id]);
 
   const chooseConversation = (conversation) => {

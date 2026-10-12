@@ -6,11 +6,11 @@ import rateLimit from 'express-rate-limit';
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { resolve4, resolve6, resolveMx } from 'node:dns/promises';
 import { readFileSync } from 'node:fs';
-import { createServer } from 'node:http';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import nodemailer from 'nodemailer';
-import { Server } from 'socket.io';
 
 const isProduction = process.env.NODE_ENV === 'production';
 const port = Number(process.env.PORT) || 5000;
@@ -38,18 +38,39 @@ if (!jwtSecret) throw new Error('JWT_SECRET is required in production.');
 if (!process.env.JWT_SECRET) console.warn('Using a development-only JWT secret. Add JWT_SECRET to .env before deployment.');
 
 const app = express();
-const httpServer = createServer(app);
 const allowOrigin = (origin, callback) => {
   if (!origin || configuredOrigins.includes(origin) || (!isProduction && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin))) return callback(null, true);
   callback(new Error('Origin is not allowed by CORS.'));
 };
-const io = new Server(httpServer, { cors: { origin: allowOrigin, credentials: true } });
 
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(cors({ origin: allowOrigin, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: false, limit: '64kb' }));
+
+let databaseConnectionPromise;
+async function connectDatabase() {
+  if (mongoose.connection.readyState === 1) return mongoose.connection;
+  if (!databaseConnectionPromise) {
+    databaseConnectionPromise = mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 10000 })
+      .catch((error) => {
+        databaseConnectionPromise = undefined;
+        throw error;
+      });
+  }
+  await databaseConnectionPromise;
+  return mongoose.connection;
+}
+
+app.use(async (_req, _res, next) => {
+  try {
+    await connectDatabase();
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 const userSchema = new mongoose.Schema({
   firstName: { type: String, trim: true, minlength: 2, maxlength: 40 },
@@ -577,8 +598,8 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res, next) 
     const conversation = await Conversation.findById(req.params.id); if (!(await canAccessConversation(conversation, req.user.id))) return res.status(403).json({ message: 'You cannot access this conversation.' });
     const user = await User.findById(req.user.id); const message = await Message.create({ conversation: conversation._id, sender: req.user.id, senderName: user.displayName, content }); const populated = await message.populate('sender', 'displayName');
     conversation.updatedAt = new Date(); await conversation.save();
-    io.to(`conversation:${conversation._id}`).emit('message:new', populated); const response = { message: populated };
-    if (/@kaya\b/i.test(content)) { const aiMessage = await Message.create({ conversation: conversation._id, senderType: 'ai', senderName: 'Kaya', content: await buildKayaReply(content, req.user.id) }); io.to(`conversation:${conversation._id}`).emit('message:new', aiMessage); response.aiMessage = aiMessage; }
+    const response = { message: populated };
+    if (/@kaya\b/i.test(content)) { const aiMessage = await Message.create({ conversation: conversation._id, senderType: 'ai', senderName: 'Kaya', content: await buildKayaReply(content, req.user.id) }); response.aiMessage = aiMessage; }
     res.status(201).json(response);
   } catch (error) { next(error); }
 });
@@ -599,14 +620,18 @@ app.get('/api/dashboard', requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-io.use((socket, next) => { try { socket.user = jwt.verify(socket.handshake.auth?.token, jwtSecret); next(); } catch { next(new Error('Authentication required.')); } });
-io.on('connection', (socket) => socket.on('conversation:join', async (conversationId) => {
-  if (!mongoose.isValidObjectId(conversationId)) return;
-  const conversation = await Conversation.findById(conversationId).catch(() => null);
-  if (await canAccessConversation(conversation, socket.user.id)) socket.join(`conversation:${conversationId}`);
-}));
 app.use((req, res) => res.status(404).json({ message: 'Endpoint not found.' }));
 app.use((error, _req, res, _next) => { console.error(error); if (error.name === 'ValidationError' || error.name === 'CastError') return res.status(400).json({ message: error.message }); if (error.code === 11000) return res.status(409).json({ message: error.keyPattern?.username ? 'This username is already taken.' : 'That record already exists.' }); res.status(500).json({ message: isProduction ? 'Something went wrong.' : error.message }); });
 
-try { await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 10000 }); httpServer.listen(port, () => console.log(`KayaTo API running on http://localhost:${port}`)); }
-catch (error) { console.error(`Could not start KayaTo API: ${error.message}`); process.exit(1); }
+export default app;
+
+const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+if (isDirectRun) {
+  try {
+    await connectDatabase();
+    app.listen(port, () => console.log(`KayaTo API running on http://localhost:${port}`));
+  } catch (error) {
+    console.error(`Could not start KayaTo API: ${error.message}`);
+    process.exit(1);
+  }
+}
