@@ -70,6 +70,51 @@ function dueLabel(value) {
   }).format(date);
 }
 
+function getDeadlineStatus(task) {
+  if (!task.dueDate || task.status === 'done') {
+    return null;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const dueDate = new Date(task.dueDate);
+  dueDate.setHours(0, 0, 0, 0);
+
+  if (Number.isNaN(dueDate.getTime())) {
+    return null;
+  }
+
+  const daysLeft = Math.round(
+    (dueDate.getTime() - today.getTime()) /
+      (1000 * 60 * 60 * 24)
+  );
+
+  if (daysLeft < 0) {
+    return {
+      label: 'Overdue',
+      type: 'overdue',
+    };
+  }
+
+  if (daysLeft === 0) {
+    return {
+      label: 'Due today',
+      type: 'today',
+    };
+  }
+
+  if (daysLeft <= 3) {
+    return {
+      label: `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`,
+      type: 'upcoming',
+    };
+  }
+
+  return null;
+}
+
+
 export default function Tasks() {
   const [items, setItems] = useState([]);
   const [teams, setTeams] = useState([]);
@@ -278,11 +323,16 @@ export default function Tasks() {
                 </div>
 
                 <div className="kanban-cards">
-                  {columnTasks.map((task) => (
-                    <article
-                      className="kanban-card"
-                      key={task._id}
-                    >
+                  
+               {columnTasks.map((task) => {
+                const deadline = getDeadlineStatus(task);
+
+                return (
+                <article
+                className="kanban-card"
+                key={task._id}
+                >
+
                       <div className="card-top">
                         <span
                           className={`task-kind ${task.taskType}`}
@@ -333,9 +383,13 @@ export default function Tasks() {
                           {task.priority}
                         </span>
 
-                        <span className="card-due">
-                          {dueLabel(task.dueDate)}
-                        </span>
+                        
+                 {deadline && (
+                 <span className={`card-due deadline-${deadline.type}`}>
+                 {deadline.label}
+                 </span>
+                 )}
+
                       </div>
 
                       <label className="compact-select">
@@ -363,7 +417,8 @@ export default function Tasks() {
                         </select>
                       </label>
                     </article>
-                  ))}
+                     );
+                  })}
 
                   {!columnTasks.length && (
                     <div className="column-empty">

@@ -4430,3 +4430,35 @@ h3,
   .plan-preview:not(.generated) .preview-empty { margin-top: 54px; }
   .plan-preview .preview-empty { padding: 22px 18px; }
 }
+
+.card-due {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.deadline-overdue {
+  color: #b42318;
+  background: #fee4e2;
+}
+
+.deadline-today {
+  color: #b54708;
+  background: #fef0c7;
+}
+
+.deadline-soon {
+  color: #175cd3;
+  background: #dbeafe;
+}
+
+.deadline-upcoming {
+  color: #067647;
+  background: #d1fadf;
+}
+
+
