@@ -119,6 +119,7 @@ export default function Tasks() {
   const [items, setItems] = useState([]);
   const [teams, setTeams] = useState([]);
   const [scope, setScope] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -160,19 +161,29 @@ export default function Tasks() {
   }, []);
 
   const tasks = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
     return items.filter((task) => {
       const matchesScope =
         scope === 'all' || task.taskType === scope;
-
-      const searchText =
-        `${task.title || ''} ${task.project || ''}`.toLowerCase();
+      const matchesStatus =
+        statusFilter === 'all' || task.status === statusFilter;
+      const matchesTitle = (task.title || '')
+        .toLowerCase()
+        .includes(normalizedQuery);
 
       return (
         matchesScope &&
-        searchText.includes(query.toLowerCase())
+        matchesStatus &&
+        matchesTitle
       );
     });
-  }, [items, scope, query]);
+  }, [items, scope, statusFilter, query]);
+
+  const visibleColumns =
+    statusFilter === 'all'
+      ? columns
+      : columns.filter(([id]) => id === statusFilter);
 
   const updateStatus = async (task, status) => {
     setError('');
@@ -271,17 +282,39 @@ export default function Tasks() {
           ))}
         </div>
 
-        <label className="table-search">
-          <Search size={16} />
+        <div className="toolbar-actions">
+          <label className="table-search">
+            <Search size={16} />
 
-          <input
-            value={query}
-            onChange={(e) =>
-              setQuery(e.target.value)
-            }
-            placeholder="Search tasks"
-          />
-        </label>
+            <input
+              value={query}
+              onChange={(e) =>
+                setQuery(e.target.value)
+              }
+              placeholder="Search tasks"
+              aria-label="Search tasks by title"
+            />
+          </label>
+
+          <label className="task-status-filter">
+            <span>Status</span>
+
+            <select
+              value={statusFilter}
+              onChange={(e) =>
+                setStatusFilter(e.target.value)
+              }
+            >
+              <option value="all">All statuses</option>
+
+              {columns.map(([value, label]) => (
+                <option value={value} key={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       {loading ? (
@@ -290,8 +323,12 @@ export default function Tasks() {
           Loading tasks...
         </div>
       ) : (
-        <div className="kanban-board">
-          {columns.map(([id, label]) => {
+        <div
+          className={`kanban-board${
+            statusFilter === 'all' ? '' : ' single-column'
+          }`}
+        >
+          {visibleColumns.map(([id, label]) => {
             const columnTasks = tasks.filter(
               (task) => task.status === id
             );

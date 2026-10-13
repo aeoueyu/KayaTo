@@ -1606,7 +1606,59 @@ textarea::placeholder { color: color-mix(in srgb, var(--muted) 84%, transparent)
 .segmented button.active,
 .view-toggle button.active { color: var(--text); background: var(--surface-raised); box-shadow: 0 1px 3px rgba(44,41,41,.08); }
 .table-search { height: 38px; border-color: transparent; background: var(--surface-soft); }
+.task-status-filter {
+  height: 38px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.task-status-filter select {
+  min-width: 118px;
+  height: 30px;
+  padding: 0 24px 0 8px;
+  border: 0;
+  background-color: transparent;
+  box-shadow: none;
+  font-size: 11px;
+}
+[data-theme='dark'] .task-status-filter select {
+  color-scheme: dark;
+  color: var(--text);
+  border: 1px solid var(--border);
+  background-color: var(--surface-raised);
+}
+[data-theme='dark'] .task-status-filter select:hover {
+  border-color: color-mix(in srgb, var(--product-red) 48%, var(--border));
+  background-color: var(--surface-soft);
+}
+[data-theme='dark'] .task-status-filter select:focus {
+  border-color: var(--product-red);
+  background-color: var(--surface-raised);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--product-red) 14%, transparent);
+}
+[data-theme='dark'] .task-status-filter option {
+  color: var(--text);
+  background-color: var(--surface-raised);
+}
+[data-theme='dark'] .task-status-filter option:checked {
+  color: var(--action-text);
+  background-color: var(--product-red-fill);
+  font-weight: 700;
+}
+[data-theme='dark'] .task-status-filter option:hover,
+[data-theme='dark'] .task-status-filter option:focus {
+  color: var(--text);
+  background-color: var(--surface-soft);
+}
 .kanban-board { gap: 10px; }
+.kanban-board.single-column { grid-template-columns: minmax(220px, 1fr); }
 .kanban-column,
 .kanban-column:nth-child(n) {
   padding: 11px;
@@ -1820,11 +1872,21 @@ textarea::placeholder { color: color-mix(in srgb, var(--muted) 84%, transparent)
   .choice-card { padding: 18px 52px 18px 18px; }
   .choice-icon { margin: 0; }
   .task-toolbar { padding: 8px; }
+  .task-toolbar .toolbar-actions {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) minmax(150px, auto);
+  }
+  .task-status-filter { justify-content: space-between; }
   .planner-form,
   .plan-preview { padding: 18px; }
   .plan-preview { min-height: 430px; }
   .bill-summary > div { min-height: 104px; }
   .chat-page { border-radius: 12px; }
+}
+
+@media (max-width: 390px) {
+  .task-toolbar .toolbar-actions { grid-template-columns: 1fr; }
+  .task-status-filter select { flex: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
