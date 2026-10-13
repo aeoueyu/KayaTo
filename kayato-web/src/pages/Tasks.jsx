@@ -185,6 +185,12 @@ export default function Tasks() {
       ? columns
       : columns.filter(([id]) => id === statusFilter);
 
+  const clearFilters = () => {
+    setScope('all');
+    setStatusFilter('all');
+    setQuery('');
+  };
+
   const updateStatus = async (task, status) => {
     setError('');
 
@@ -321,6 +327,39 @@ export default function Tasks() {
         <div className="app-loading">
           <span className="loading-spinner" />
           Loading tasks...
+        </div>
+      ) : !error && items.length === 0 ? (
+        <div className="empty-state task-board-empty">
+          <Plus size={30} aria-hidden="true" />
+          <h2>Create your first task</h2>
+          <p>
+            Add a personal priority or team deliverable to
+            start organizing your work.
+          </p>
+          <button
+            className="button button-primary"
+            onClick={() => setShowCreate(true)}
+          >
+            Create task
+          </button>
+        </div>
+      ) : items.length > 0 && tasks.length === 0 ? (
+        <div
+          className="empty-state task-board-empty"
+          role="status"
+        >
+          <Search size={30} aria-hidden="true" />
+          <h2>No matching tasks</h2>
+          <p>
+            Try another title or reset the task type and
+            status filters.
+          </p>
+          <button
+            className="button button-secondary"
+            onClick={clearFilters}
+          >
+            Clear filters
+          </button>
         </div>
       ) : (
         <div

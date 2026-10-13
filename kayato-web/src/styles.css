@@ -4105,6 +4105,15 @@ h3,
 .empty-state { min-height: 180px; display: grid; place-items: center; align-content: center; gap: 7px; padding: 28px; text-align: center; color: var(--muted); }
 .empty-state h2, .empty-state h3, .empty-state p { margin: 0; }
 .empty-state svg { color: var(--accent); }
+.task-board-empty {
+  min-height: 300px;
+  border: 1px dashed var(--border);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+.task-board-empty h2 { color: var(--text); }
+.task-board-empty p { max-width: 440px; line-height: 1.6; }
+.task-board-empty .button { margin-top: 9px; }
 
 /* Account exit confirmation */
 .logout-dialog { width: min(430px, calc(100vw - 32px)); padding: 28px; border: 1px solid var(--border); border-radius: 14px; color: var(--text); background: var(--surface-raised); box-shadow: var(--shadow-lg); }
