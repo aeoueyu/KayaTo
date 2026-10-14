@@ -9,7 +9,7 @@ import { api, errorMessage } from '../lib/api';
 import { formatDateTime } from '../lib/formatters';
 
 const emptyFriends = { friends: [], incoming: [], outgoing: [] };
-const personId = (person) => String(person?._id || person?.id || '');
+const personId = (person) => String(typeof person === 'string' ? person : person?._id || person?.id || '');
 const initials = (name = 'KayaTo User') => name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
 const personHandle = (person) => person?.username ? `@${person.username}` : person?.email || '';
 
@@ -104,6 +104,12 @@ export default function Chat() {
     const poller = window.setInterval(() => loadMessages(false), 3_000);
     return () => { disposed = true; window.clearInterval(poller); };
   }, [active?._id]);
+
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timeout = window.setTimeout(() => setNotice(''), 5_000);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
 
   const chooseConversation = (conversation) => {
     setActive(conversation);
@@ -217,11 +223,16 @@ export default function Chat() {
       {open && <button className="channel-scrim" onClick={() => setOpen(false)} aria-label="Close chat sidebar" />}
       <main className="conversation">
         <header className="conversation-head"><div className="conversation-heading-wrap"><button className="icon-button channel-toggle" onClick={() => setOpen(!open)} aria-label={open ? 'Collapse chat sidebar' : 'Open chat sidebar'} aria-expanded={open}>{open ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}</button><div className="conversation-heading"><span className="channel-title">{active?.kind === 'direct' ? <MessageCircle size={19} /> : <Hash size={19} />}<b>{activeTitle || 'Chat'}</b></span><small>{activeSubtitle || 'Add a friend or create a team to start chatting.'}</small></div></div></header>
-        {error && <p className="form-error page-notice" role="alert">{error}</p>}
-        {notice && <p className="form-message page-notice" role="status">{notice}</p>}
+        <div className="chat-notice-region" aria-live="polite">
+          {error && <div className="chat-notice chat-notice-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError('')} aria-label="Dismiss error"><X size={15} /></button></div>}
+          {notice && <div className="chat-notice chat-notice-success" role="status"><Check size={16} aria-hidden="true" /><span>{notice}</span><button type="button" onClick={() => setNotice('')} aria-label="Dismiss notification"><X size={15} /></button></div>}
+        </div>
         <div className="message-list">
           {(loading || messagesLoading) && <div className="chat-loading" role="status"><span className="loading-spinner" />{loading ? 'Loading conversations...' : 'Loading messages...'}</div>}
-          {!loading && !messagesLoading && messages.map((message) => <article className={`message ${message.senderType === 'ai' ? 'ai-message' : ''}`} key={message._id}><span className={`avatar ${message.senderType === 'ai' ? 'kaya-avatar' : 'avatar-plum'}`}>{message.senderType === 'ai' ? <KayaMascot size={28} decorative /> : initials(message.sender?.displayName || message.senderName)}</span><div className="message-body"><div className="message-meta"><b>{message.senderType === 'ai' ? 'Kaya' : message.sender?.displayName || message.senderName}</b>{message.senderType === 'ai' && <span>Assistant</span>}<small>{formatDateTime(message.createdAt, user?.timezone, { hour: '2-digit', minute: '2-digit' })}</small></div><p>{message.content}</p></div></article>)}
+          {!loading && !messagesLoading && messages.map((message) => {
+            const ownMessage = message.senderType !== 'ai' && personId(message.sender) === personId(user);
+            return <article className={`message ${message.senderType === 'ai' ? 'ai-message' : ''} ${ownMessage ? 'own-message' : ''}`} key={message._id}><span className={`avatar ${message.senderType === 'ai' ? 'kaya-avatar' : 'avatar-plum'}`}>{message.senderType === 'ai' ? <KayaMascot size={28} decorative /> : initials(message.sender?.displayName || message.senderName)}</span><div className="message-body"><div className="message-meta"><b>{message.senderType === 'ai' ? 'Kaya' : message.sender?.displayName || message.senderName}</b>{message.senderType === 'ai' && <span>Assistant</span>}<small>{formatDateTime(message.createdAt, user?.timezone, { hour: '2-digit', minute: '2-digit' })}</small></div><p>{message.content}</p></div></article>;
+          })}
           {!loading && !messagesLoading && active && !messages.length && <div className="empty-state"><MessageCircle size={28} /><h3>Start the conversation</h3><p>{active.kind === 'direct' ? `Say hello to ${activePerson?.displayName || 'your friend'}.` : 'Send an update, or mention @Kaya for task-aware guidance.'}</p></div>}
           {!loading && !messagesLoading && !active && <div className="empty-state"><Users size={28} /><h3>Your messages will appear here</h3><p>Add a friend for private chat, or create a team conversation.</p><button className="friend-action" onClick={() => { setOpen(true); setFriendPanel(true); }}>Add a friend</button></div>}
         </div>
