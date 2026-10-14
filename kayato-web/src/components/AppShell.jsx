@@ -50,15 +50,24 @@ export default function AppShell() {
     return () => { active = false; window.clearInterval(interval); };
   }, []);
 
-  const openNotifications = async () => {
-    const opening = !notificationsOpen;
-    setNotificationsOpen(opening);
-    if (opening && notifications.some((item) => !item.read)) {
+  const openNotifications = () => {
+    setNotificationsOpen((current) => !current);
+  };
+
+  const selectNotification = async (item) => {
+    if (!item.read) {
       try {
-        await api.patch('/notifications/read');
-        setNotifications((current) => current.map((item) => ({ ...item, read: true })));
-      } catch { /* The list remains usable if read state cannot be saved. */ }
+        const { data } = await api.patch(`/notifications/${item._id}/read`);
+        setNotifications((current) => current.map((notification) => notification._id === item._id ? { ...notification, ...data, read: true } : notification));
+      } catch { /* Navigation remains available if read state cannot be saved. */ }
     }
+    setNotificationsOpen(false);
+    const taskId = item.task?._id || item.task;
+    const billId = item.bill?._id || item.bill;
+    const teamId = item.team?._id || item.team || item.task?.team;
+    if (taskId) navigate(`/app/tasks?task=${taskId}${teamId ? `&team=${teamId}` : ''}`);
+    else if (billId) navigate(`/app/bills?bill=${billId}`);
+    else if (teamId) navigate(`/app/tasks?team=${teamId}`);
   };
 
   useEffect(() => {
@@ -121,7 +130,7 @@ export default function AppShell() {
           <div className="global-search"><Search size={18} /><input aria-label="Search" placeholder="Search tasks, people, or projects" /><kbd>Ctrl K</kbd></div>
           <div className="top-actions">
             <button className="icon-button" aria-label="Notifications" title="Notifications" aria-expanded={notificationsOpen} onClick={openNotifications}><Bell size={19} />{notifications.some((item) => !item.read) && <span className="notification-dot" />}</button>
-            {notificationsOpen && <section className="notification-menu" aria-label="Notifications"><header><b>Notifications</b><span>{notifications.length}</span></header><div>{notifications.length ? notifications.slice(0, 12).map((item) => <article key={item._id} className={item.read ? '' : 'unread'}><p>{item.message}</p><small>{item.team?.name || 'Personal task'} · {new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.createdAt))}</small></article>) : <p className="notification-empty">No notifications yet.</p>}</div></section>}
+            {notificationsOpen && <section className="notification-menu" aria-label="Notifications"><header><b>Notifications</b><span>{notifications.filter((item) => !item.read).length} unread</span></header><div>{notifications.length ? notifications.slice(0, 12).map((item) => <button type="button" key={item._id} className={`notification-item ${item.read ? '' : 'unread'}`} onClick={() => selectNotification(item)}><p>{item.message}</p><small>{item.team?.name || (item.bill ? 'Bill reminder' : 'Personal task')} · {new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.createdAt))}</small></button>) : <div className="notification-empty"><Bell size={24} /><b>No notifications yet</b><span>Updates about your tasks and teams will appear here.</span></div>}</div></section>}
             <button type="button" className="avatar avatar-peach mobile-avatar" aria-label="Open account actions" aria-haspopup="dialog" onClick={() => logoutDialog.current?.showModal()}>{initials}</button>
           </div>
         </header>

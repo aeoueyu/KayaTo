@@ -172,6 +172,7 @@ const notificationSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', default: null },
   task: { type: mongoose.Schema.Types.ObjectId, ref: 'Task', default: null },
+  bill: { type: mongoose.Schema.Types.ObjectId, ref: 'Bill', default: null },
   type: { type: String, required: true, default: 'task' },
   message: { type: String, required: true, trim: true, maxlength: 500 },
   read: { type: Boolean, default: false, index: true },
@@ -646,13 +647,29 @@ app.get('/api/teams/:id/activity', requireAuth, async (req, res, next) => {
 });
 app.get('/api/notifications', requireAuth, async (req, res, next) => {
   try {
-    res.json(await Notification.find({ user: req.user.id }).populate('team', 'name').sort({ createdAt: -1 }).limit(50));
+    res.json(await Notification.find({ user: req.user.id })
+      .populate('team', 'name')
+      .populate('task', 'title taskType team')
+      .populate('bill', 'name dueDate')
+      .sort({ createdAt: -1 })
+      .limit(50));
   } catch (error) { next(error); }
 });
 app.patch('/api/notifications/read', requireAuth, async (req, res, next) => {
   try {
     await Notification.updateMany({ user: req.user.id, read: false }, { $set: { read: true } });
     res.json({ message: 'Notifications marked as read.' });
+  } catch (error) { next(error); }
+});
+app.patch('/api/notifications/:id/read', requireAuth, async (req, res, next) => {
+  try {
+    const notification = await Notification.findOneAndUpdate(
+      { _id: req.params.id, user: req.user.id },
+      { $set: { read: true } },
+      { new: true },
+    ).populate('team', 'name').populate('task', 'title taskType team').populate('bill', 'name dueDate');
+    if (!notification) return res.status(404).json({ message: 'Notification not found.' });
+    res.json(notification);
   } catch (error) { next(error); }
 });
 

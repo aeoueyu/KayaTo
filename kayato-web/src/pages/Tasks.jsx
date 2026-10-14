@@ -1,6 +1,7 @@
 
 import { ArrowRight, Pencil, Plus, Save, Search, Trash2, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { api, errorMessage, formatDateInput } from '../lib/api';
 
@@ -145,6 +146,7 @@ function getDeadlineStatus(task) {
 
 export default function Tasks() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [teams, setTeams] = useState([]);
   const [scope, setScope] = useState('all');
@@ -297,8 +299,37 @@ export default function Tasks() {
     } catch (requestError) {
       setSelectedTask(null);
       setError(errorMessage(requestError, 'Unable to load task details.'));
+      if (searchParams.get('task') === String(task._id)) {
+        const next = new URLSearchParams(searchParams);
+        next.delete('task');
+        setSearchParams(next, { replace: true });
+      }
     } finally {
       setDetailsLoading(false);
+    }
+  };
+
+  const requestedTaskId = searchParams.get('task');
+  const requestedTeamId = searchParams.get('team');
+
+  useEffect(() => {
+    if (!requestedTeamId || !teams.some((team) => String(team._id) === requestedTeamId)) return;
+    setScope('team');
+    setTeamFilter(requestedTeamId);
+  }, [requestedTeamId, teams]);
+
+  useEffect(() => {
+    if (!requestedTaskId || detailsLoading || String(selectedTask?._id || '') === requestedTaskId) return;
+    const task = items.find((item) => String(item._id) === requestedTaskId);
+    if (task) openTask(task);
+  }, [requestedTaskId, items, selectedTask?._id, detailsLoading]);
+
+  const closeTask = () => {
+    setSelectedTask(null);
+    if (requestedTaskId) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('task');
+      setSearchParams(next, { replace: true });
     }
   };
 
@@ -658,7 +689,7 @@ export default function Tasks() {
           loading={detailsLoading}
           canEdit={selectedTask.taskType !== 'team' || editableTeamIds.has(String(selectedTask.team?._id || selectedTask.team))}
           team={teams.find((item) => String(item._id) === String(selectedTask.team?._id || selectedTask.team))}
-          onClose={() => setSelectedTask(null)}
+          onClose={closeTask}
           onSaved={saveTask}
         />
       )}
