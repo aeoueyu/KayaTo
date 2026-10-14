@@ -19,7 +19,8 @@ const isProduction = process.env.NODE_ENV === 'production';
 const port = Number(process.env.PORT) || 5000;
 const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI;
 const jwtSecret = process.env.JWT_SECRET || (!isProduction ? 'kayato-local-development-secret' : '');
-const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '7d';
+const jwtRememberedExpiresIn = process.env.JWT_REMEMBERED_EXPIRES_IN || '15d';
+const jwtSessionExpiresIn = process.env.JWT_SESSION_EXPIRES_IN || '30m';
 const gmailUser = process.env.GMAIL_USER?.trim();
 const gmailAppPassword = process.env.GMAIL_APP_PASSWORD?.replace(/\s+/g, '');
 const geminiApiKey = process.env.GEMINI_API_KEY?.trim();
@@ -264,7 +265,11 @@ const Notification = mongoose.model('Notification', notificationSchema);
 const PushSubscription = mongoose.model('PushSubscription', pushSubscriptionSchema);
 
 const publicUser = (user) => ({ id: String(user._id), firstName: user.firstName, lastName: user.lastName, displayName: user.displayName, username: user.username || '', email: user.email, timezone: user.timezone, currency: user.currency, primaryUsage: user.primaryUsage, onboardingCompleted: user.onboardingCompleted, notificationPreferences: user.notificationPreferences, notificationChannels: user.notificationChannels });
-const signToken = (user) => jwt.sign({ id: user._id, email: user.email }, jwtSecret, { expiresIn: jwtExpiresIn });
+const signToken = (user, rememberMe = true) => jwt.sign(
+  { id: user._id, email: user.email },
+  jwtSecret,
+  { expiresIn: rememberMe ? jwtRememberedExpiresIn : jwtSessionExpiresIn },
+);
 const normalizeEmail = (value = '') => value.trim().toLowerCase();
 const normalizeUsername = (value = '') => String(value).trim().replace(/^@+/, '').toLowerCase();
 const usernameIsValid = (value) => /^[a-z0-9_]{3,24}$/.test(value);
@@ -768,7 +773,8 @@ app.post('/api/auth/login', async (req, res, next) => {
   try {
     const user = await User.findOne({ email: normalizeEmail(req.body.email) }).select('+passwordHash');
     if (!user || !(await bcrypt.compare(String(req.body.password || ''), user.passwordHash))) return res.status(401).json({ message: 'Incorrect email address or password.' });
-    res.json({ token: signToken(user), user: publicUser(user) });
+    const rememberMe = req.body.rememberMe === true;
+    res.json({ token: signToken(user, rememberMe), user: publicUser(user) });
   } catch (error) { next(error); }
 });
 app.post('/api/auth/forgot-password', otpLimiter, async (req, res, next) => {

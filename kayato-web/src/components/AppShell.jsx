@@ -2,7 +2,7 @@ import { Bell, Bot, CalendarDays, CheckCheck, ChevronLeft, ChevronRight, Clock3,
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import Brand from './Brand';
-import { SESSION_TIMEOUT_MINUTES, useAuth } from '../auth/AuthContext';
+import { REMEMBERED_SESSION_TIMEOUT_DAYS, SHORT_SESSION_TIMEOUT_MINUTES, useAuth } from '../auth/AuthContext';
 import { api } from '../lib/api';
 import { formatDateTime } from '../lib/formatters';
 
@@ -21,7 +21,7 @@ const emptySearchResults = { tasks: [], people: [], projects: [] };
 const personInitials = (name = 'KayaTo User') => name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
 
 export default function AppShell() {
-  const { user, logout, sessionWarning, sessionSecondsRemaining, extendSession } = useAuth();
+  const { user, logout, sessionWarning, sessionSecondsRemaining, extendSession, rememberedSession } = useAuth();
   const navigate = useNavigate();
   const logoutDialog = useRef(null);
   const sessionDialog = useRef(null);
@@ -393,7 +393,7 @@ export default function AppShell() {
       <dialog ref={sessionDialog} className="logout-dialog session-timeout-dialog" aria-labelledby="session-timeout-title" aria-describedby="session-timeout-description" onCancel={(event) => event.preventDefault()}>
         <div className="logout-dialog-icon session-timeout-icon" aria-hidden="true"><Clock3 size={22} /></div>
         <h2 id="session-timeout-title">Your session is about to expire</h2>
-        <p id="session-timeout-description">For your security, KayaTo signs you out after {SESSION_TIMEOUT_MINUTES} minutes without activity.</p>
+        <p id="session-timeout-description">For your security, KayaTo signs you out after {rememberedSession ? `${REMEMBERED_SESSION_TIMEOUT_DAYS} days` : `${SHORT_SESSION_TIMEOUT_MINUTES} minutes`} without activity.</p>
         <p className="session-countdown" role="timer" aria-label={`${sessionSecondsRemaining} seconds remaining`}><strong>{sessionSecondsRemaining}</strong> seconds remaining</p>
         <div className="logout-dialog-actions">
           <button type="button" className="button button-secondary" onClick={() => { logout(); navigate('/login', { replace: true }); }}>Log out now</button>

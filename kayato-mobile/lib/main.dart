@@ -2286,23 +2286,58 @@ class _PlannerTabState extends State<PlannerTab> {
   }
 
   Future<void> save() async {
-    setState(() => busy = true);
+    if (busy || plan.isEmpty) return;
+    final draftTasks = plan
+        .map((task) => Map<String, dynamic>.from(task))
+        .toList();
+    var createdCount = 0;
+    setState(() {
+      busy = true;
+      error = null;
+      plan = [];
+    });
     try {
-      for (final task in plan) {
+      for (final task in draftTasks) {
         await widget.api.request(
           '/tasks',
           method: 'POST',
           body: {
-            ...Map<String, dynamic>.from(task),
+            ...task,
             'project': 'Planner',
             'taskType': 'personal',
             'aiGenerated': true,
           },
         );
+        createdCount += 1;
       }
-      kayaToast.success('Plan added to your tasks');
+      if (mounted) {
+        setState(() {
+          brief.clear();
+          importedFileName = null;
+          importedFileBytes = null;
+          importMessage = null;
+        });
+      }
+      kayaToast.success(
+        '${draftTasks.length} ${draftTasks.length == 1 ? 'task' : 'tasks'} added',
+        description: 'Your draft was cleared to prevent duplicate tasks.',
+      );
     } catch (e) {
-      kayaToast.error('Could not save plan', description: e.toString());
+      final remainingTasks = draftTasks.skip(createdCount).toList();
+      if (mounted) {
+        setState(() {
+          plan = remainingTasks;
+          error = createdCount > 0
+              ? '$createdCount ${createdCount == 1 ? 'task was' : 'tasks were'} created. Only the remaining tasks are shown below.'
+              : 'No tasks were created. Review the error and try again.';
+        });
+      }
+      kayaToast.error(
+        createdCount > 0
+            ? 'Some tasks were not created'
+            : 'Could not save plan',
+        description: e.toString(),
+      );
     } finally {
       if (mounted) setState(() => busy = false);
     }

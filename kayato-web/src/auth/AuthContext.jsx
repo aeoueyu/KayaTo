@@ -6,9 +6,16 @@ const AuthContext = createContext(null);
 const LAST_ACTIVITY_KEY = 'kayato-last-activity';
 export const SESSION_NOTICE_KEY = 'kayato-auth-notice';
 const configuredTimeoutMinutes = Number(import.meta.env.VITE_SESSION_TIMEOUT_MINUTES || 30);
-export const SESSION_TIMEOUT_MINUTES = Number.isFinite(configuredTimeoutMinutes) && configuredTimeoutMinutes >= 2 ? configuredTimeoutMinutes : 30;
-export const SESSION_TIMEOUT_MS = SESSION_TIMEOUT_MINUTES * 60_000;
-const SESSION_WARNING_MS = Math.min(60_000, Math.floor(SESSION_TIMEOUT_MS / 2));
+const configuredRememberedDays = Number(import.meta.env.VITE_REMEMBERED_SESSION_TIMEOUT_DAYS || 15);
+export const SHORT_SESSION_TIMEOUT_MINUTES = Number.isFinite(configuredTimeoutMinutes) && configuredTimeoutMinutes >= 2 ? configuredTimeoutMinutes : 30;
+export const REMEMBERED_SESSION_TIMEOUT_DAYS = Number.isFinite(configuredRememberedDays) && configuredRememberedDays >= 1 ? configuredRememberedDays : 15;
+const SHORT_SESSION_TIMEOUT_MS = SHORT_SESSION_TIMEOUT_MINUTES * 60_000;
+const REMEMBERED_SESSION_TIMEOUT_MS = REMEMBERED_SESSION_TIMEOUT_DAYS * 24 * 60 * 60_000;
+const SESSION_WARNING_MS = 60_000;
+
+function sessionTimeoutMs(storage) {
+  return storage === window.localStorage ? REMEMBERED_SESSION_TIMEOUT_MS : SHORT_SESSION_TIMEOUT_MS;
+}
 
 function tokenStorage() {
   if (window.localStorage.getItem('kayato-token')) return window.localStorage;
@@ -56,8 +63,9 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const storage = tokenStorage();
     if (!storage) { setLoading(false); return; }
+    const timeoutMs = sessionTimeoutMs(storage);
     const lastActivity = Number(storage.getItem(LAST_ACTIVITY_KEY));
-    if (lastActivity && Date.now() - lastActivity >= SESSION_TIMEOUT_MS) {
+    if (lastActivity && Date.now() - lastActivity >= timeoutMs) {
       logout('timeout');
       setLoading(false);
       return;
@@ -76,12 +84,13 @@ export function AuthProvider({ children }) {
     if (!user) return undefined;
     const storage = tokenStorage();
     if (!storage) return undefined;
+    const timeoutMs = sessionTimeoutMs(storage);
     let lastWrite = Number(storage.getItem(LAST_ACTIVITY_KEY)) || Date.now();
     if (!storage.getItem(LAST_ACTIVITY_KEY)) storage.setItem(LAST_ACTIVITY_KEY, String(lastWrite));
 
     const evaluateSession = () => {
       const lastActivity = Number(storage.getItem(LAST_ACTIVITY_KEY)) || lastWrite;
-      const remaining = SESSION_TIMEOUT_MS - (Date.now() - lastActivity);
+      const remaining = timeoutMs - (Date.now() - lastActivity);
       if (remaining <= 0) {
         logout('timeout');
         return;
@@ -141,13 +150,18 @@ export function AuthProvider({ children }) {
     setWarningState(false);
   }, [setWarningState]);
 
-  const login = async (credentials, remember) => { const { data } = await api.post('/auth/login', credentials); persistSession(data, remember); return data.user; };
+  const login = async (credentials, remember) => {
+    const { data } = await api.post('/auth/login', { ...credentials, rememberMe: Boolean(remember) });
+    persistSession(data, remember);
+    return data.user;
+  };
   const checkSignupEmailDomain = async (email) => { const { data } = await api.post('/auth/register/check-email-domain', { email }); return data; };
   const checkSignupUsername = async (username) => { const { data } = await api.post('/auth/register/check-username', { username }); return data; };
   const requestSignupOtp = async (email, username) => { const { data } = await api.post('/auth/register/request-otp', { email, username }); return data; };
   const register = async (details) => { const { data } = await api.post('/auth/register/verify', details); persistSession(data); return data.user; };
   const updateUser = async (updates) => { const { data } = await api.patch('/auth/me', updates); setUser(data); const storage = tokenStorage(); storage?.setItem('kayato-user', JSON.stringify(data)); return data; };
-  const value = useMemo(() => ({ user, loading, login, checkSignupEmailDomain, checkSignupUsername, requestSignupOtp, register, updateUser, logout, sessionWarning, sessionSecondsRemaining, extendSession }), [user, loading, logout, sessionWarning, sessionSecondsRemaining, extendSession]);
+  const rememberedSession = tokenStorage() === window.localStorage;
+  const value = useMemo(() => ({ user, loading, login, checkSignupEmailDomain, checkSignupUsername, requestSignupOtp, register, updateUser, logout, sessionWarning, sessionSecondsRemaining, extendSession, rememberedSession }), [user, loading, logout, sessionWarning, sessionSecondsRemaining, extendSession, rememberedSession]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
