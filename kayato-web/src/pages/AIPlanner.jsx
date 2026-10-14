@@ -3,19 +3,59 @@ import { useState } from 'react';
 import KayaMascot from '../components/KayaMascot';
 import { api, errorMessage } from '../lib/api';
 
+const MAX_FILE_SIZE_MB = 5;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+const MAX_BRIEF_CHARACTERS = 5_000;
+const formatFileSize = (bytes) => bytes < 1024 * 1024
+  ? `${Math.max(1, Math.round(bytes / 1024))} KB`
+  : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
 export default function AIPlanner() {
   const [brief, setBrief] = useState('');
   const [file, setFile] = useState(null);
   const [plan, setPlan] = useState([]);
   const [error, setError] = useState('');
+  const [fileNotice, setFileNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const selectFile = async (event) => {
     const picked = event.target.files[0];
-    setFile(picked);
-    if (picked && (/text|json|csv/.test(picked.type) || /\.(txt|md|csv|json)$/i.test(picked.name))) {
-      setBrief(await picked.text());
+    setError('');
+    setFileNotice('');
+    if (!picked) return;
+    if (picked.size > MAX_FILE_SIZE_BYTES) {
+      setFile(null);
+      event.target.value = '';
+      setError(`Choose a file smaller than ${MAX_FILE_SIZE_MB} MB.`);
+      return;
+    }
+
+    try {
+      const rawText = await picked.text();
+      const readableText = rawText
+        .replace(/\0/g, '')
+        .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
+        .replace(/\r/g, '')
+        .trim();
+      const readableCharacters = readableText.match(/[\p{L}\p{N}]/gu)?.length || 0;
+      if (readableCharacters < 20) {
+        setFile(null);
+        event.target.value = '';
+        setError('This file does not contain enough readable text. Choose another file or paste the project brief below.');
+        return;
+      }
+
+      const importedText = readableText.slice(0, MAX_BRIEF_CHARACTERS);
+      setFile(picked);
+      setBrief(importedText);
+      setFileNotice(readableText.length > MAX_BRIEF_CHARACTERS
+        ? `Imported the first ${MAX_BRIEF_CHARACTERS.toLocaleString()} characters.`
+        : 'Readable text imported into your brief.');
+    } catch {
+      setFile(null);
+      event.target.value = '';
+      setError('This file could not be read. Choose another file or paste the project brief below.');
     }
   };
 
@@ -63,18 +103,18 @@ export default function AIPlanner() {
       <div className="planner-layout">
         <section className="panel planner-form">
           <label className={`upload-zone ${file ? 'has-file' : ''}`}>
-            <input type="file" accept=".txt,.md,.csv,.json" onChange={selectFile} />
+            <input type="file" onChange={selectFile} aria-describedby="planner-file-help" />
             {file ? (
               <>
                 <FileText size={22} />
-                <div><b>{file.name}</b><small>Text imported into your brief</small></div>
+                <div><b>{file.name}</b><small>{formatFileSize(file.size)}, {fileNotice}</small></div>
                 <Check size={19} />
               </>
             ) : (
               <>
                 <Upload size={24} />
-                <b>Choose a text, Markdown, CSV, or JSON file</b>
-                <small>You can also paste the project brief below.</small>
+                <b>Choose any file up to {MAX_FILE_SIZE_MB} MB</b>
+                <small id="planner-file-help">Readable text will be imported into your project brief.</small>
               </>
             )}
           </label>
@@ -88,7 +128,7 @@ export default function AIPlanner() {
               placeholder="Describe the project requirements, outputs, deadlines, and constraints."
             />
           </label>
-          {error && <p className="form-error">{error}</p>}
+          {error && <p className="form-error" role="alert">{error}</p>}
           <button className="button button-primary button-full" disabled={busy || brief.trim().length < 20} onClick={generate}>
             {busy ? 'Preparing plan...' : <>Generate plan <ArrowRight size={17} /></>}
           </button>
