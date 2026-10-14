@@ -204,9 +204,8 @@ export default function Tasks() {
         scope === 'all' || task.taskType === scope;
       const matchesStatus =
         statusFilter === 'all' || task.status === statusFilter;
-      const matchesTitle = (task.title || '')
-        .toLowerCase()
-        .includes(normalizedQuery);
+      const matchesTitle = [task.title, task.project, task.description]
+        .some((value) => String(value || '').toLowerCase().includes(normalizedQuery));
       const taskTeamId = String(task.team?._id || task.team || '');
       const matchesTeam = teamFilter === 'all'
         || (teamFilter === 'personal' && task.taskType === 'personal')
@@ -311,6 +310,11 @@ export default function Tasks() {
 
   const requestedTaskId = searchParams.get('task');
   const requestedTeamId = searchParams.get('team');
+  const requestedProject = searchParams.get('project');
+
+  useEffect(() => {
+    if (requestedProject) setQuery(requestedProject);
+  }, [requestedProject]);
 
   useEffect(() => {
     if (!requestedTeamId || !teams.some((team) => String(team._id) === requestedTeamId)) return;

@@ -1,11 +1,12 @@
 import {
-  Bell, Check, Eye, EyeOff, LogOut, Monitor, MonitorCog, Moon,
-  Save, ShieldCheck, Sun, UserRound,
+  Bell, Check, Eye, EyeOff, Laptop, LogOut, Mail, Monitor, MonitorCog, Moon,
+  Save, Send, ShieldCheck, Smartphone, Sun, UserRound,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { api, errorMessage } from '../lib/api';
+import { browserPushState, disableBrowserPush, enableBrowserPush } from '../lib/pushNotifications';
 import { useTheme } from '../theme/ThemeProvider';
 
 const sections = [
@@ -20,6 +21,12 @@ const notificationOptions = [
   { key: 'deadlines', title: 'Deadlines and reminders', description: 'Upcoming due dates and overdue work.' },
   { key: 'teamMessages', title: 'Team messages', description: 'New messages from your teams and friends.' },
   { key: 'bills', title: 'Bills and payments', description: 'Reminders before a bill is due.' },
+];
+const deliveryOptions = [
+  { key: 'inApp', title: 'In-app notifications', description: 'Show updates in the notification menu.', icon: Bell },
+  { key: 'email', title: 'Email reminders', description: 'Send selected updates to your verified email.', icon: Mail },
+  { key: 'browserPush', title: 'Browser push', description: 'Show notifications even when KayaTo is in the background.', icon: Laptop },
+  { key: 'mobilePush', title: 'Mobile push', description: 'Send selected updates to registered Android or iOS devices.', icon: Smartphone },
 ];
 
 const themeOptions = [
@@ -73,6 +80,15 @@ export default function Settings() {
     teamMessages: user?.notificationPreferences?.teamMessages ?? true,
     bills: user?.notificationPreferences?.bills ?? true,
   });
+  const [notificationChannels, setNotificationChannels] = useState({
+    inApp: user?.notificationChannels?.inApp ?? true,
+    email: user?.notificationChannels?.email ?? false,
+    browserPush: user?.notificationChannels?.browserPush ?? false,
+    mobilePush: user?.notificationChannels?.mobilePush ?? false,
+  });
+  const [pushConfig, setPushConfig] = useState(null);
+  const [pushConfigStatus, setPushConfigStatus] = useState('loading');
+  const [testingNotifications, setTestingNotifications] = useState(false);
   const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
 
   useEffect(() => {
@@ -92,7 +108,21 @@ export default function Settings() {
       teamMessages: user.notificationPreferences?.teamMessages ?? true,
       bills: user.notificationPreferences?.bills ?? true,
     });
+    setNotificationChannels({
+      inApp: user.notificationChannels?.inApp ?? true,
+      email: user.notificationChannels?.email ?? false,
+      browserPush: user.notificationChannels?.browserPush ?? false,
+      mobilePush: user.notificationChannels?.mobilePush ?? false,
+    });
   }, [user]);
+
+  useEffect(() => {
+    let active = true;
+    browserPushState()
+      .then((data) => { if (active) { setPushConfig(data); setPushConfigStatus('ready'); } })
+      .catch(() => { if (active) setPushConfigStatus('error'); });
+    return () => { active = false; };
+  }, []);
 
   const showStatus = (type, message) => setStatus({ type, message });
   const selectSection = (id) => { setActiveSection(id); setStatus(null); setFieldErrors({}); };
@@ -147,11 +177,28 @@ export default function Settings() {
   const saveNotifications = async () => {
     setBusy(true); setStatus(null);
     try {
-      await updateUser({ notificationPreferences: notifications });
+      if (notificationChannels.browserPush) {
+        await enableBrowserPush(pushConfig?.web?.publicKey);
+      } else if (savedNotificationChannels.browserPush || pushConfig?.web?.subscribed) {
+        await disableBrowserPush();
+      }
+      await updateUser({ notificationPreferences: notifications, notificationChannels });
+      const nextPushConfig = await browserPushState().catch(() => null);
+      if (nextPushConfig) setPushConfig(nextPushConfig);
       showStatus('success', 'Notification preferences were saved.');
     } catch (error) {
       showStatus('error', errorMessage(error));
     } finally { setBusy(false); }
+  };
+
+  const sendTestNotification = async () => {
+    setTestingNotifications(true); setStatus(null);
+    try {
+      const { data } = await api.post('/notifications/test');
+      const results = Object.entries(data.deliveryStatus || {}).filter(([, value]) => value === 'sent').map(([key]) => key === 'browserPush' ? 'browser' : key === 'mobilePush' ? 'mobile' : key);
+      showStatus('success', results.length ? `Test sent through ${results.join(', ')}.` : 'Test notification added to your in-app notifications.');
+    } catch (error) { showStatus('error', errorMessage(error)); }
+    finally { setTestingNotifications(false); }
   };
 
   const confirmLogout = () => {
@@ -194,7 +241,14 @@ export default function Settings() {
     teamMessages: user?.notificationPreferences?.teamMessages ?? true,
     bills: user?.notificationPreferences?.bills ?? true,
   };
-  const notificationsHaveChanges = Object.keys(savedNotifications).some((key) => notifications[key] !== savedNotifications[key]);
+  const savedNotificationChannels = {
+    inApp: user?.notificationChannels?.inApp ?? true,
+    email: user?.notificationChannels?.email ?? false,
+    browserPush: user?.notificationChannels?.browserPush ?? false,
+    mobilePush: user?.notificationChannels?.mobilePush ?? false,
+  };
+  const notificationsHaveChanges = Object.keys(savedNotifications).some((key) => notifications[key] !== savedNotifications[key])
+    || Object.keys(savedNotificationChannels).some((key) => notificationChannels[key] !== savedNotificationChannels[key]);
   const initials = (user?.displayName || 'KayaTo User').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
 
   return (
@@ -241,11 +295,25 @@ export default function Settings() {
           </form>}
 
           {activeSection === 'notifications' && <section className="settings-section">
-            <header><div className="settings-section-icon"><Bell size={21} /></div><div><h2>Notification preferences</h2><p>Choose which account activity should get your attention.</p></div></header>
+            <header><div className="settings-section-icon"><Bell size={21} /></div><div><h2>Notification preferences</h2><p>Choose what KayaTo sends and where you receive it.</p></div></header>
             <div className="settings-section-body settings-preference-list">
+              <div className="notification-settings-heading"><strong>Notify me about</strong><small>These categories apply to every enabled delivery method.</small></div>
               {notificationOptions.map((option) => <label className="preference-row" key={option.key}><span><strong>{option.title}</strong><small>{option.description}</small></span><input type="checkbox" checked={notifications[option.key]} onChange={(event) => setNotifications({ ...notifications, [option.key]: event.target.checked })} /><span className="settings-switch" aria-hidden="true" /></label>)}
+              <div className="notification-settings-heading delivery-heading"><strong>Delivery methods</strong><small>Browser permission is requested only when you save browser push.</small></div>
+              {deliveryOptions.map(({ key, title, description, icon: Icon }) => {
+                const unavailable = (key === 'email' && pushConfigStatus === 'ready' && !pushConfig?.email?.configured)
+                  || (key === 'browserPush' && pushConfigStatus === 'ready' && !pushConfig?.web?.configured)
+                  || (key === 'mobilePush' && pushConfigStatus === 'ready' && !pushConfig?.mobile?.configured);
+                const detail = unavailable ? `${description} Server setup is still required.`
+                  : key === 'browserPush' && pushConfig?.permission === 'denied' ? 'Blocked in this browser. Allow notifications in your browser site settings.'
+                    : key === 'mobilePush' && pushConfig?.mobile?.subscriptions ? `${description} ${pushConfig.mobile.subscriptions} device registered.`
+                      : description;
+                return <label className={`preference-row delivery-row ${unavailable ? 'unavailable' : ''}`} key={key}><Icon size={18} aria-hidden="true" /><span><strong>{title}</strong><small>{detail}</small></span><input type="checkbox" checked={notificationChannels[key]} disabled={busy || unavailable || (key === 'browserPush' && pushConfig?.permission === 'denied')} onChange={(event) => setNotificationChannels({ ...notificationChannels, [key]: event.target.checked })} /><span className="settings-switch" aria-hidden="true" /></label>;
+              })}
+              {pushConfigStatus === 'loading' && <p className="notification-config-status" role="status">Checking delivery availability...</p>}
+              {pushConfigStatus === 'error' && <p className="notification-config-status error" role="alert">Delivery availability could not be checked. You can still save category preferences.</p>}
             </div>
-            <footer><small className="settings-action-note">{notificationsHaveChanges ? 'Your notification choices have changed.' : 'No unsaved changes.'}</small><button type="button" className="button button-primary" disabled={busy || !notificationsHaveChanges} onClick={saveNotifications}><Save size={16} />{busy ? 'Saving...' : 'Save notifications'}</button></footer>
+            <footer><small className="settings-action-note">{notificationsHaveChanges ? 'Your notification choices have changed.' : 'Preferences are up to date.'}</small><div className="notification-actions"><button type="button" className="button button-secondary" disabled={busy || testingNotifications || notificationsHaveChanges} onClick={sendTestNotification}><Send size={16} />{testingNotifications ? 'Sending...' : 'Send test'}</button><button type="button" className="button button-primary" disabled={busy || !notificationsHaveChanges} onClick={saveNotifications}><Save size={16} />{busy ? 'Saving...' : 'Save notifications'}</button></div></footer>
           </section>}
 
           {activeSection === 'appearance' && <section className="settings-section">

@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'dart:async';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -22,6 +25,53 @@ bool emailSyntaxIsValid(String value) => RegExp(
 ).hasMatch(value.trim());
 
 void main() => runApp(const KayaToApp());
+
+class PushService {
+  static const apiKey = String.fromEnvironment('FIREBASE_API_KEY');
+  static const appId = String.fromEnvironment('FIREBASE_APP_ID');
+  static const messagingSenderId = String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID');
+  static const projectId = String.fromEnvironment('FIREBASE_PROJECT_ID');
+  static StreamSubscription<String>? _tokenRefresh;
+  static StreamSubscription<RemoteMessage>? _foregroundMessages;
+  static bool get configured => apiKey.isNotEmpty && appId.isNotEmpty && messagingSenderId.isNotEmpty && projectId.isNotEmpty;
+  static String get platform => defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android';
+
+  static Future<bool> _initialize() async {
+    if (kIsWeb || !configured) return false;
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(options: const FirebaseOptions(apiKey: apiKey, appId: appId, messagingSenderId: messagingSenderId, projectId: projectId));
+    }
+    return true;
+  }
+
+  static Future<void> enable(ApiClient api) async {
+    if (!await _initialize()) throw Exception('Firebase mobile push is not configured in this build.');
+    final permission = await FirebaseMessaging.instance.requestPermission(alert: true, badge: true, sound: true);
+    if (permission.authorizationStatus != AuthorizationStatus.authorized && permission.authorizationStatus != AuthorizationStatus.provisional) {
+      throw Exception('Notification permission was not granted.');
+    }
+    final token = await FirebaseMessaging.instance.getToken();
+    if (token == null) throw Exception('This device could not create a notification token.');
+    await api.request('/push/mobile', method: 'POST', body: {'token': token, 'platform': platform});
+    await _tokenRefresh?.cancel();
+    _tokenRefresh = FirebaseMessaging.instance.onTokenRefresh.listen((nextToken) {
+      api.request('/push/mobile', method: 'POST', body: {'token': nextToken, 'platform': platform}).catchError((_) => null);
+    });
+    await _foregroundMessages?.cancel();
+    _foregroundMessages = FirebaseMessaging.onMessage.listen((message) {
+      kayaToast.success(message.notification?.title ?? 'KayaTo', description: message.notification?.body ?? 'You have a new notification.');
+    });
+  }
+
+  static Future<void> disable(ApiClient api) async {
+    if (!await _initialize()) return;
+    final token = await FirebaseMessaging.instance.getToken();
+    if (token != null) await api.request('/push/mobile', method: 'DELETE', body: {'token': token});
+    await FirebaseMessaging.instance.deleteToken();
+    await _tokenRefresh?.cancel();
+    _tokenRefresh = null;
+  }
+}
 
 class ApiClient {
   static String get baseUrl =>
@@ -75,6 +125,7 @@ class _KayaToAppState extends State<KayaToApp> {
     if (api.token != null) {
       try {
         user = await api.request('/auth/me');
+        if (user?['notificationChannels']?['mobilePush'] == true) unawaited(PushService.enable(api).catchError((_) {}));
       } catch (_) {
         await prefs.remove('token');
         api.token = null;
@@ -89,10 +140,12 @@ class _KayaToAppState extends State<KayaToApp> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('token', api.token!);
     setState(() {});
+    if (user?['notificationChannels']?['mobilePush'] == true) unawaited(PushService.enable(api).catchError((_) {}));
   }
 
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
+    if (user?['notificationChannels']?['mobilePush'] == true) await PushService.disable(api).catchError((_) {});
     await prefs.remove('token');
     api.token = null;
     setState(() => user = null);
@@ -1506,7 +1559,7 @@ class MoreTab extends StatelessWidget {
               onTap: () => open(
                 context,
                 'Settings',
-                SettingsTab(user: user, onLogout: onLogout, onTheme: onTheme),
+                SettingsTab(api: api, user: user, onLogout: onLogout, onTheme: onTheme),
               ),
             ),
           ],
@@ -1603,15 +1656,67 @@ class _TeamsPageState extends State<TeamsPage> {
   );
 }
 
-class SettingsTab extends StatelessWidget {
+class SettingsTab extends StatefulWidget {
   const SettingsTab({
+    required this.api,
     required this.user,
     required this.onLogout,
     required this.onTheme,
     super.key,
   });
+  final ApiClient api;
   final Map<String, dynamic> user;
   final VoidCallback onLogout, onTheme;
+  @override
+  State<SettingsTab> createState() => _SettingsTabState();
+}
+
+class _SettingsTabState extends State<SettingsTab> {
+  late Map<String, bool> categories;
+  late bool mobilePush;
+  bool saving = false;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    final preferences = Map<String, dynamic>.from(widget.user['notificationPreferences'] ?? const {});
+    final channels = Map<String, dynamic>.from(widget.user['notificationChannels'] ?? const {});
+    categories = {
+      'taskAssignments': preferences['taskAssignments'] ?? true,
+      'deadlines': preferences['deadlines'] ?? true,
+      'teamMessages': preferences['teamMessages'] ?? true,
+      'bills': preferences['bills'] ?? true,
+    };
+    mobilePush = channels['mobilePush'] ?? false;
+  }
+
+  Future<void> saveNotifications() async {
+    setState(() { saving = true; error = null; });
+    try {
+      if (mobilePush) {
+        await PushService.enable(widget.api);
+      } else {
+        await PushService.disable(widget.api);
+      }
+      final existingChannels = Map<String, dynamic>.from(widget.user['notificationChannels'] ?? const {});
+      await widget.api.request('/auth/me', method: 'PATCH', body: {
+        'notificationPreferences': categories,
+        'notificationChannels': {
+          'inApp': existingChannels['inApp'] ?? true,
+          'email': existingChannels['email'] ?? false,
+          'browserPush': existingChannels['browserPush'] ?? false,
+          'mobilePush': mobilePush,
+        },
+      });
+      if (mounted) kayaToast.success('Notifications updated', description: mobilePush ? 'This device can now receive KayaTo reminders.' : 'Mobile push is turned off on this device.');
+    } catch (exception) {
+      if (mounted) setState(() => error = exception.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => ListView(
     padding: const EdgeInsets.all(20),
@@ -1628,14 +1733,14 @@ class SettingsTab extends StatelessWidget {
           children: [
             ListTile(
               leading: const CircleAvatar(child: Icon(Icons.person_outline)),
-              title: Text(user['displayName']),
-              subtitle: Text(user['email']),
+              title: Text(widget.user['displayName']),
+              subtitle: Text(widget.user['email']),
             ),
             const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.contrast_rounded),
               title: const Text('Switch light or dark mode'),
-              onTap: onTheme,
+              onTap: widget.onTheme,
             ),
             ListTile(
               leading: Icon(
@@ -1646,7 +1751,46 @@ class SettingsTab extends StatelessWidget {
                 'Log out',
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
-              onTap: onLogout,
+              onTap: widget.onLogout,
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 16),
+      Text('Notifications', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+      const SizedBox(height: 8),
+      if (error != null) ErrorBox(error!),
+      Card(
+        child: Column(
+          children: [
+            for (final option in const [
+              ('taskAssignments', 'Task assignments', 'Task activity and assignments'),
+              ('deadlines', 'Deadlines', 'Upcoming and overdue tasks'),
+              ('teamMessages', 'Messages', 'Team, friend, and chat activity'),
+              ('bills', 'Bills', 'Upcoming and overdue payments'),
+            ]) ...[
+              SwitchListTile(
+                title: Text(option.$2),
+                subtitle: Text(option.$3),
+                value: categories[option.$1]!,
+                onChanged: saving ? null : (value) => setState(() => categories[option.$1] = value),
+              ),
+              const Divider(height: 1),
+            ],
+            SwitchListTile(
+              secondary: const Icon(Icons.notifications_active_outlined),
+              title: const Text('Mobile push'),
+              subtitle: Text(PushService.configured ? 'Receive selected reminders on this device' : 'Add Firebase dart-define values to enable mobile push'),
+              value: mobilePush,
+              onChanged: saving || !PushService.configured ? null : (value) => setState(() => mobilePush = value),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: FilledButton.icon(
+                onPressed: saving ? null : saveNotifications,
+                icon: saving ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.save_outlined),
+                label: Text(saving ? 'Saving...' : 'Save notifications'),
+              ),
             ),
           ],
         ),

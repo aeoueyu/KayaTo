@@ -9,13 +9,16 @@
     "check": "node --check server.js"
   },
   "dependencies": {
+    "@google/genai": "^2.29.1",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "express-rate-limit": "^8.7.1",
+    "google-auth-library": "^11.3.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.19.1",
-    "nodemailer": "^10.1.0"
+    "nodemailer": "^10.1.0",
+    "web-push": "^3.6.7"
   }
 }

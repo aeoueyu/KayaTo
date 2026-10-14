@@ -1,7 +1,8 @@
 import {
   Check, ChevronLeft, ChevronRight, Hash, MessageCircle, Search, Send, Sparkles, UserPlus, Users, X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import KayaMascot from '../components/KayaMascot';
 import { api, errorMessage } from '../lib/api';
@@ -13,6 +14,8 @@ const personHandle = (person) => person?.username ? `@${person.username}` : pers
 
 export default function Chat() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const handledGlobalSearch = useRef('');
   const [conversations, setConversations] = useState([]);
   const [friends, setFriends] = useState(emptyFriends);
   const [active, setActive] = useState(null);
@@ -53,6 +56,28 @@ export default function Chat() {
       .catch((requestError) => setError(errorMessage(requestError)))
       .finally(() => setLoading(false));
   }, []);
+
+  const requestedPersonQuery = searchParams.get('find')?.trim() || '';
+  const requestedConversationId = searchParams.get('conversation')?.trim() || '';
+  useEffect(() => {
+    if (loading || !requestedConversationId) return;
+    const requested = conversations.find((conversation) => conversation._id === requestedConversationId);
+    if (requested) { setActive(requested); setOpen(window.innerWidth > 820); }
+  }, [conversations, loading, requestedConversationId]);
+  useEffect(() => {
+    if (loading || requestedPersonQuery.length < 2 || handledGlobalSearch.current === requestedPersonQuery) return;
+    handledGlobalSearch.current = requestedPersonQuery;
+    setOpen(true);
+    setFriendPanel(true);
+    setFriendQuery(requestedPersonQuery);
+    setSearching(true);
+    setError('');
+    setNotice('');
+    api.get('/users/search', { params: { q: requestedPersonQuery } })
+      .then(({ data }) => setSearchResults(data))
+      .catch((requestError) => setError(errorMessage(requestError)))
+      .finally(() => setSearching(false));
+  }, [loading, requestedPersonQuery]);
 
   useEffect(() => {
     if (!active) { setMessages([]); return undefined; }

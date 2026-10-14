@@ -26,3 +26,13 @@ flutter run --dart-define=API_URL=http://YOUR_PC_IP:5000/api
 ```
 
 Allow port 5000 through Windows Firewall and keep the phone and computer on the same network.
+
+## Mobile push notifications
+
+KayaTo mobile uses Firebase Cloud Messaging. Pass your Firebase app values as dart defines:
+
+```powershell
+flutter run --dart-define=API_URL=http://10.0.2.2:5000/api --dart-define=FIREBASE_API_KEY=... --dart-define=FIREBASE_APP_ID=... --dart-define=FIREBASE_MESSAGING_SENDER_ID=... --dart-define=FIREBASE_PROJECT_ID=...
+```
+
+Enable Mobile push from the app Settings screen. On iOS, also enable Push Notifications and Background Modes (Remote notifications) for Runner in Xcode, then upload an APNs authentication key in Firebase.

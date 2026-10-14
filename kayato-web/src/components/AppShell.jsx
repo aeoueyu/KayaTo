@@ -1,5 +1,5 @@
-import { Bell, Bot, CalendarDays, ChevronLeft, ChevronRight, Clock3, CreditCard, LayoutDashboard, ListTodo, LogOut, MessageCircle, Search, Settings, Users } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Bell, Bot, CalendarDays, CheckCheck, ChevronLeft, ChevronRight, Clock3, CreditCard, FolderKanban, LayoutDashboard, ListTodo, LogOut, MessageCircle, RefreshCw, Search, Settings, Users, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import Brand from './Brand';
 import { SESSION_TIMEOUT_MINUTES, useAuth } from '../auth/AuthContext';
@@ -16,21 +16,38 @@ const nav = [
 ];
 
 const mobileNav = [nav[0], nav[1], nav[2], nav[4], nav[6]];
+const emptySearchResults = { tasks: [], people: [], projects: [] };
+const personInitials = (name = 'KayaTo User') => name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
 
 export default function AppShell() {
   const { user, logout, sessionWarning, sessionSecondsRemaining, extendSession } = useAuth();
   const navigate = useNavigate();
   const logoutDialog = useRef(null);
   const sessionDialog = useRef(null);
+  const searchRoot = useRef(null);
+  const searchInput = useRef(null);
   const initials = (user?.displayName || 'KayaTo User').split(/\s+/).slice(0,2).map(part=>part[0]).join('').toUpperCase();
   const [teams, setTeams] = useState([]);
   const [teamsStatus, setTeamsStatus] = useState('loading');
   const [notifications, setNotifications] = useState([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationStatus, setNotificationStatus] = useState('loading');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchStatus, setSearchStatus] = useState('idle');
+  const [searchResults, setSearchResults] = useState(emptySearchResults);
+  const [activeSearchIndex, setActiveSearchIndex] = useState(-1);
+  const [searchRetry, setSearchRetry] = useState(0);
   const [collapsed, setCollapsed] = useState(() => {
     try { return window.localStorage.getItem('kayato-sidebar') === 'collapsed'; }
     catch { return false; }
   });
+
+  const searchItems = useMemo(() => [
+    ...searchResults.tasks.map((item) => ({ type: 'task', id: String(item._id), item })),
+    ...searchResults.projects.map((item) => ({ type: 'project', id: `project-${item.name}`, item })),
+    ...searchResults.people.map((item) => ({ type: 'person', id: String(item.id), item })),
+  ], [searchResults]);
 
   useEffect(() => {
     let active = true;
@@ -40,18 +57,148 @@ export default function AppShell() {
     return () => { active = false; };
   }, []);
 
-  useEffect(() => {
-    let active = true;
-    const loadNotifications = () => api.get('/notifications')
-      .then(({ data }) => { if (active) setNotifications(data); })
-      .catch(() => {});
-    loadNotifications();
-    const interval = window.setInterval(loadNotifications, 30_000);
-    return () => { active = false; window.clearInterval(interval); };
+  const loadNotifications = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) setNotificationStatus('loading');
+    try {
+      const { data } = await api.get('/notifications');
+      setNotifications(data);
+      setNotificationStatus('ready');
+    } catch {
+      if (!quiet) setNotificationStatus('error');
+    }
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const refresh = () => { if (active) loadNotifications({ quiet: true }); };
+    loadNotifications();
+    const interval = window.setInterval(refresh, 30_000);
+    return () => { active = false; window.clearInterval(interval); };
+  }, [loadNotifications]);
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (query.length < 2) {
+      setSearchResults(emptySearchResults);
+      setSearchStatus('idle');
+      setActiveSearchIndex(-1);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setSearchStatus('loading');
+    const timer = window.setTimeout(() => {
+      api.get('/search', { params: { q: query }, signal: controller.signal })
+        .then(({ data }) => {
+          const next = {
+            tasks: Array.isArray(data.tasks) ? data.tasks : [],
+            projects: Array.isArray(data.projects) ? data.projects : [],
+            people: Array.isArray(data.people) ? data.people : [],
+          };
+          setSearchResults(next);
+          const count = next.tasks.length + next.projects.length + next.people.length;
+          setSearchStatus(count ? 'ready' : 'empty');
+          setActiveSearchIndex(count ? 0 : -1);
+        })
+        .catch((error) => {
+          if (error.code === 'ERR_CANCELED' || error.name === 'CanceledError') return;
+          setSearchResults(emptySearchResults);
+          setSearchStatus('error');
+          setActiveSearchIndex(-1);
+        });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchQuery, searchRetry]);
+
+  useEffect(() => {
+    const handleShortcut = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setNotificationsOpen(false);
+        setSearchOpen(true);
+        window.requestAnimationFrame(() => searchInput.current?.focus());
+      } else if (event.key === 'Escape' && searchOpen) {
+        setSearchOpen(false);
+        searchInput.current?.blur();
+      }
+    };
+    const handleOutsideClick = (event) => {
+      if (searchOpen && searchRoot.current && !searchRoot.current.contains(event.target)) setSearchOpen(false);
+    };
+    window.addEventListener('keydown', handleShortcut);
+    document.addEventListener('pointerdown', handleOutsideClick);
+    return () => {
+      window.removeEventListener('keydown', handleShortcut);
+      document.removeEventListener('pointerdown', handleOutsideClick);
+    };
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (!searchOpen || activeSearchIndex < 0) return;
+    document.getElementById(`global-search-option-${activeSearchIndex}`)?.scrollIntoView({ block: 'nearest' });
+  }, [activeSearchIndex, searchOpen]);
+
   const openNotifications = () => {
+    setSearchOpen(false);
     setNotificationsOpen((current) => !current);
+  };
+
+  const markAllNotificationsRead = async () => {
+    try {
+      await api.patch('/notifications/read');
+      setNotifications((current) => current.map((item) => ({ ...item, read: true })));
+    } catch { /* The next poll will restore the server state. */ }
+  };
+
+  const openGlobalSearch = () => {
+    setNotificationsOpen(false);
+    setSearchOpen(true);
+    window.requestAnimationFrame(() => searchInput.current?.focus());
+  };
+
+  const closeGlobalSearch = ({ clear = false } = {}) => {
+    setSearchOpen(false);
+    searchInput.current?.blur();
+    if (clear) {
+      setSearchQuery('');
+      setSearchResults(emptySearchResults);
+      setSearchStatus('idle');
+    }
+  };
+
+  const chooseSearchResult = (result) => {
+    if (!result) return;
+    if (result.type === 'task') navigate(`/app/tasks?task=${result.item._id}`);
+    else if (result.type === 'project') navigate(`/app/tasks?project=${encodeURIComponent(result.item.name)}`);
+    else {
+      const personQuery = result.item.username ? `@${result.item.username}` : result.item.displayName;
+      navigate(`/app/chat?find=${encodeURIComponent(personQuery)}`);
+    }
+    closeGlobalSearch({ clear: true });
+  };
+
+  const handleSearchKeyDown = (event) => {
+    if (!searchItems.length) {
+      if (event.key === 'Escape') closeGlobalSearch();
+      return;
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActiveSearchIndex((current) => (current + 1) % searchItems.length);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveSearchIndex((current) => (current <= 0 ? searchItems.length - 1 : current - 1));
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      chooseSearchResult(searchItems[Math.max(0, activeSearchIndex)]);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      closeGlobalSearch();
+    }
   };
 
   const selectNotification = async (item) => {
@@ -62,6 +209,10 @@ export default function AppShell() {
       } catch { /* Navigation remains available if read state cannot be saved. */ }
     }
     setNotificationsOpen(false);
+    if (typeof item.url === 'string' && item.url.startsWith('/app')) {
+      navigate(item.url);
+      return;
+    }
     const taskId = item.task?._id || item.task;
     const billId = item.bill?._id || item.bill;
     const teamId = item.team?._id || item.team || item.task?.team;
@@ -93,6 +244,12 @@ export default function AppShell() {
     logout();
     navigate('/login', { replace: true });
   };
+
+  const searchGroups = [
+    { type: 'task', title: 'Tasks', items: searchItems.filter((result) => result.type === 'task') },
+    { type: 'project', title: 'Projects', items: searchItems.filter((result) => result.type === 'project') },
+    { type: 'person', title: 'People', items: searchItems.filter((result) => result.type === 'person') },
+  ].filter((group) => group.items.length);
 
   return (
     <div className={`app-layout ${collapsed ? 'sidebar-collapsed' : ''}`}>
@@ -127,10 +284,73 @@ export default function AppShell() {
       <main className="app-main">
         <header className="app-topbar">
           <div className="mobile-brand"><Brand /></div>
-          <div className="global-search"><Search size={18} /><input aria-label="Search" placeholder="Search tasks, people, or projects" /><kbd>Ctrl K</kbd></div>
+          <div className={`global-search-shell ${searchOpen ? 'open' : ''}`} ref={searchRoot}>
+            <div className="global-search" role="search">
+              <Search size={18} aria-hidden="true" />
+              <input
+                ref={searchInput}
+                type="search"
+                value={searchQuery}
+                onChange={(event) => { setSearchQuery(event.target.value); setSearchOpen(true); }}
+                onFocus={openGlobalSearch}
+                onKeyDown={handleSearchKeyDown}
+                aria-label="Search tasks, people, or projects"
+                aria-expanded={searchOpen}
+                aria-controls="global-search-results"
+                aria-activedescendant={activeSearchIndex >= 0 ? `global-search-option-${activeSearchIndex}` : undefined}
+                aria-autocomplete="list"
+                role="combobox"
+                placeholder="Search tasks, people, or projects"
+                autoComplete="off"
+                spellCheck="false"
+              />
+              <kbd aria-hidden="true">Ctrl K</kbd>
+              <button type="button" className="search-close" onClick={() => closeGlobalSearch({ clear: true })} aria-label="Close search"><X size={17} /></button>
+            </div>
+
+            {searchOpen && <section className="global-search-menu" id="global-search-results" role="listbox" aria-label="Global search results">
+              {searchStatus === 'idle' && <div className="global-search-guidance"><Search size={22} /><strong>Search your workspace</strong><span>Type at least 2 characters to find tasks, projects, and people.</span></div>}
+              {searchStatus === 'loading' && <div className="global-search-loading" role="status" aria-label="Searching"><span /><span /><span /></div>}
+              {searchStatus === 'error' && <div className="global-search-guidance search-error" role="alert"><strong>Search is unavailable</strong><span>Check your connection, then try again.</span><button type="button" onClick={() => setSearchRetry((current) => current + 1)}>Try again</button></div>}
+              {searchStatus === 'empty' && <div className="global-search-guidance"><Search size={22} /><strong>No matches found</strong><span>Try a task title, project name, username, or email.</span></div>}
+              {searchStatus === 'ready' && <div className="global-search-results">
+                {searchGroups.map((group) => <div className="global-search-group" role="group" aria-label={group.title} key={group.type}>
+                  <span className="global-search-group-label">{group.title}</span>
+                  {group.items.map((result) => {
+                    const index = searchItems.findIndex((item) => item.type === result.type && item.id === result.id);
+                    const item = result.item;
+                    const primary = result.type === 'task' ? item.title : result.type === 'project' ? item.name : item.displayName;
+                    const secondary = result.type === 'task'
+                      ? `${item.project || 'Personal'}, ${String(item.status || 'todo').replace('-', ' ')}`
+                      : result.type === 'project'
+                        ? `${item.taskCount} ${item.taskCount === 1 ? 'task' : 'tasks'}`
+                        : item.username ? `@${item.username}` : item.email;
+                    return <button
+                      type="button"
+                      role="option"
+                      aria-selected={index === activeSearchIndex}
+                      id={`global-search-option-${index}`}
+                      className={index === activeSearchIndex ? 'active' : ''}
+                      onMouseEnter={() => setActiveSearchIndex(index)}
+                      onClick={() => chooseSearchResult(result)}
+                      key={`${result.type}-${result.id}`}
+                    >
+                      <span className={`global-search-result-icon ${result.type}`} aria-hidden="true">
+                        {result.type === 'task' ? <ListTodo size={17} /> : result.type === 'project' ? <FolderKanban size={17} /> : <span>{personInitials(item.displayName)}</span>}
+                      </span>
+                      <span><strong>{primary}</strong><small>{secondary}</small></span>
+                      {result.type === 'person' && <span className="global-search-relationship">{item.relationshipStatus === 'friends' ? 'Friend' : item.relationshipStatus === 'outgoing' ? 'Request sent' : item.relationshipStatus === 'incoming' ? 'Respond' : 'View'}</span>}
+                    </button>;
+                  })}
+                </div>)}
+              </div>}
+              <footer role="presentation"><span><kbd>Up</kbd><kbd>Down</kbd> Navigate</span><span><kbd>Enter</kbd> Open</span><span><kbd>Esc</kbd> Close</span></footer>
+            </section>}
+          </div>
           <div className="top-actions">
+            <button className="icon-button mobile-search-trigger" aria-label="Search workspace" title="Search" onClick={openGlobalSearch}><Search size={19} /></button>
             <button className="icon-button" aria-label="Notifications" title="Notifications" aria-expanded={notificationsOpen} onClick={openNotifications}><Bell size={19} />{notifications.some((item) => !item.read) && <span className="notification-dot" />}</button>
-            {notificationsOpen && <section className="notification-menu" aria-label="Notifications"><header><b>Notifications</b><span>{notifications.filter((item) => !item.read).length} unread</span></header><div>{notifications.length ? notifications.slice(0, 12).map((item) => <button type="button" key={item._id} className={`notification-item ${item.read ? '' : 'unread'}`} onClick={() => selectNotification(item)}><p>{item.message}</p><small>{item.team?.name || (item.bill ? 'Bill reminder' : 'Personal task')} · {new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.createdAt))}</small></button>) : <div className="notification-empty"><Bell size={24} /><b>No notifications yet</b><span>Updates about your tasks and teams will appear here.</span></div>}</div></section>}
+            {notificationsOpen && <section className="notification-menu" aria-label="Notifications"><header><div><b>Notifications</b><span>{notifications.filter((item) => !item.read).length} unread</span></div>{notifications.some((item) => !item.read) && <button type="button" className="notification-mark-read" onClick={markAllNotificationsRead}><CheckCheck size={15} />Mark all read</button>}</header><div>{notificationStatus === 'loading' ? <div className="notification-loading" role="status"><span /><span /><span /></div> : notificationStatus === 'error' ? <div className="notification-empty" role="alert"><RefreshCw size={22} /><b>Notifications unavailable</b><span>Check your connection and try again.</span><button type="button" onClick={() => loadNotifications()}>Try again</button></div> : notifications.length ? notifications.slice(0, 20).map((item) => <button type="button" key={item._id} className={`notification-item ${item.read ? '' : 'unread'}`} onClick={() => selectNotification(item)}><p>{item.message}</p><small>{item.team?.name || (item.bill ? 'Bill reminder' : item.type?.includes('message') ? 'Message' : 'Personal task')} · {new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.createdAt))}</small></button>) : <div className="notification-empty"><Bell size={24} /><b>No notifications yet</b><span>Task, message, deadline, and bill updates will appear here.</span></div>}</div></section>}
             <button type="button" className="avatar avatar-peach mobile-avatar" aria-label="Open account actions" aria-haspopup="dialog" onClick={() => logoutDialog.current?.showModal()}>{initials}</button>
           </div>
         </header>
