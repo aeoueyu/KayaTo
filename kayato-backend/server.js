@@ -29,6 +29,17 @@ const mailer = gmailUser && gmailAppPassword ? nodemailer.createTransport({
   socketTimeout: 20_000,
 }) : null;
 const emailFrom = process.env.EMAIL_FROM?.trim() || (gmailUser ? `KayaTo <${gmailUser}>` : '');
+const supportedEmailDomains = new Set([
+  'gmail.com', 'googlemail.com',
+  'outlook.com', 'hotmail.com', 'live.com', 'msn.com',
+  'yahoo.com', 'yahoo.com.ph', 'ymail.com', 'rocketmail.com',
+  'icloud.com', 'me.com', 'mac.com',
+  'proton.me', 'protonmail.com', 'pm.me',
+  'zoho.com', 'zohomail.com', 'aol.com',
+  'gmx.com', 'gmx.us', 'mail.com', 'fastmail.com',
+  'tuta.com', 'tutanota.com', 'hey.com',
+  ...(process.env.ALLOWED_EMAIL_DOMAINS || '').split(',').map((value) => value.trim().toLowerCase()).filter(Boolean),
+]);
 const emailLogoContent = readFileSync(new URL('./assets/kayato-email-logo.png', import.meta.url));
 const configuredOrigins = (process.env.CLIENT_URL || 'http://localhost:5173,http://127.0.0.1:5173')
   .split(',').map((value) => value.trim()).filter(Boolean);
@@ -204,6 +215,8 @@ const emailSyntaxIsValid = (email) => {
   const labels = match[2].split('.');
   return labels.length >= 2 && labels.every((label) => label.length > 0 && label.length <= 63 && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label)) && /^(?:[a-z]{2,63}|xn--[a-z0-9-]{2,59})$/i.test(labels.at(-1));
 };
+const emailDomainIsSupported = (email) => supportedEmailDomains.has(email.slice(email.lastIndexOf('@') + 1));
+const unsupportedEmailMessage = 'Use an email from a supported provider such as Gmail, Outlook, Yahoo, iCloud, or Proton Mail.';
 async function emailDomainAcceptsMail(email) {
   const domain = email.slice(email.lastIndexOf('@') + 1);
   const cached = emailDomainCache.get(domain);
@@ -429,6 +442,7 @@ app.post('/api/auth/register/check-email-domain', emailCheckLimiter, async (req,
   try {
     const email = normalizeEmail(req.body.email);
     if (!emailSyntaxIsValid(email)) return res.status(400).json({ valid: false, message: 'Enter a valid email address with a complete domain.' });
+    if (!emailDomainIsSupported(email)) return res.status(400).json({ valid: false, message: unsupportedEmailMessage });
     if (await User.exists({ email })) return res.status(409).json({ valid: false, message: 'An account already uses this email address. Log in instead.' });
     const domainStatus = await emailDomainAcceptsMail(email);
     if (domainStatus === 'invalid') return res.status(400).json({ valid: false, message: 'This email domain does not exist or cannot receive messages.' });
@@ -449,6 +463,7 @@ app.post('/api/auth/register/request-otp', otpLimiter, async (req, res, next) =>
     const email = normalizeEmail(req.body.email);
     const username = normalizeUsername(req.body.username);
     if (!emailSyntaxIsValid(email)) return res.status(400).json({ message: 'Enter a valid email address with a complete domain.' });
+    if (!emailDomainIsSupported(email)) return res.status(400).json({ message: unsupportedEmailMessage });
     if (!usernameIsValid(username)) return res.status(400).json({ message: 'Choose a valid username before continuing.' });
     if (await User.exists({ username })) return res.status(409).json({ message: 'This username is already taken.' });
     const domainStatus = await emailDomainAcceptsMail(email);
@@ -484,6 +499,7 @@ app.post('/api/auth/register/verify', otpLimiter, async (req, res, next) => {
     if (!personNameIsValid(lastName)) return res.status(400).json({ message: 'Last name must have 2 to 40 characters using letters, spaces, periods, or hyphens.' });
     if (!usernameIsValid(username)) return res.status(400).json({ message: 'Use 3 to 24 lowercase letters, numbers, or underscores for your username.' });
     if (!emailSyntaxIsValid(email)) return res.status(400).json({ message: 'Enter a valid email address with a complete domain.' });
+    if (!emailDomainIsSupported(email)) { await SignupOtp.deleteOne({ email }); return res.status(400).json({ message: unsupportedEmailMessage }); }
     if (!passwordIsStrong(password)) return res.status(400).json({ message: 'Password must have 8 to 64 characters, with uppercase, lowercase, number, and symbol.' });
     if (!/^\d{6}$/.test(code)) return res.status(400).json({ message: 'Enter the 6-digit verification code.' });
     if (await User.exists({ email })) return res.status(409).json({ message: 'An account already uses this email address.' });

@@ -431,7 +431,7 @@ export default function Onboarding() {
                   />
                   {emailError && <small id="signup-email-error" className="match-error" role="alert">{emailError}</small>}
                   {emailChecking && !emailError && <small className="field-status" role="status">Checking email address...</small>}
-                  {!emailError && !emailChecking && <small id="signup-email-hint" className="field-hint">6 to 254 characters.</small>}
+                  {!emailError && !emailChecking && <small id="signup-email-hint" className="field-hint">Use Gmail, Outlook, Yahoo, iCloud, Proton Mail, or another supported email provider.</small>}
                 </label>
               </div>
               <div className="form-grid password-grid">
