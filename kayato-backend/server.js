@@ -215,6 +215,27 @@ async function getAuthorizedTeam(teamId, userId) {
   if (!mongoose.isValidObjectId(teamId)) return null;
   return Team.findOne({ _id: teamId, 'members.user': userId });
 }
+async function getEditableTeam(teamId, userId) {
+  if (!mongoose.isValidObjectId(teamId)) return null;
+  return Team.findOne({
+    _id: teamId,
+    members: { $elemMatch: { user: userId, role: { $in: ['owner', 'manager', 'member'] } } },
+  });
+}
+async function getManageableTeam(teamId, userId) {
+  if (!mongoose.isValidObjectId(teamId)) return null;
+  return Team.findOne({
+    _id: teamId,
+    $or: [
+      { owner: userId },
+      { members: { $elemMatch: { user: userId, role: 'manager' } } },
+    ],
+  });
+}
+const populatedTeam = (team) => team.populate([
+  { path: 'owner', select: 'displayName email' },
+  { path: 'members.user', select: 'displayName email' },
+]);
 const friendshipPairKey = (left, right) => [String(left), String(right)].sort().join(':');
 const directConversationKey = (left, right) => `direct:${friendshipPairKey(left, right)}`;
 async function canAccessConversation(conversation, userId) {
@@ -463,7 +484,7 @@ app.get('/api/tasks', requireAuth, async (req, res, next) => {
     const teams = await Team.find({ 'members.user': req.user.id }).select('_id');
     const query = { $or: [{ creator: req.user.id }, { assignees: req.user.id }, { team: { $in: teams.map((team) => team._id) } }] };
     if (req.query.type) query.taskType = req.query.type; if (req.query.status) query.status = req.query.status;
-    res.json(await Task.find(query).populate('team', 'name').populate('assignees', 'displayName email').sort({ dueDate: 1, createdAt: -1 }));
+    res.json(await Task.find(query).populate('creator', 'displayName email').populate('team', 'name').populate('assignees', 'displayName email').sort({ dueDate: 1, createdAt: -1 }));
   } catch (error) { next(error); }
 });
 app.get('/api/tasks/:id', requireAuth, async (req, res, next) => {
@@ -481,7 +502,7 @@ app.post('/api/tasks', requireAuth, async (req, res, next) => {
     const payload = cleanUpdate(req.body, ['title', 'description', 'project', 'taskType', 'team', 'assignees', 'status', 'priority', 'progress', 'dueDate', 'aiGenerated', 'completionCriteria']);
     const validationError = validateTaskPayload(payload, { requireTitle: true });
     if (validationError) return res.status(400).json({ message: validationError });
-    if (payload.taskType === 'team' && !(await getAuthorizedTeam(payload.team, req.user.id))) return res.status(403).json({ message: 'Select a team you belong to.' });
+    if (payload.taskType === 'team' && !(await getEditableTeam(payload.team, req.user.id))) return res.status(403).json({ message: 'You need edit access to create tasks for this team.' });
     const task = await Task.create({ ...payload, creator: req.user.id, assignees: payload.assignees?.length ? payload.assignees : [req.user.id] });
     await task.populate('creator', 'displayName email');
     await task.populate('team', 'name');
@@ -491,7 +512,9 @@ app.post('/api/tasks', requireAuth, async (req, res, next) => {
 app.patch('/api/tasks/:id', requireAuth, async (req, res, next) => {
   try {
     const task = await Task.findById(req.params.id); if (!task) return res.status(404).json({ message: 'Task not found.' });
-    const canEdit = String(task.creator) === req.user.id || task.assignees.some((id) => String(id) === req.user.id) || (task.team && await getAuthorizedTeam(task.team, req.user.id));
+    const canEdit = task.team
+      ? Boolean(await getEditableTeam(task.team, req.user.id))
+      : String(task.creator) === req.user.id || task.assignees.some((id) => String(id) === req.user.id);
     if (!canEdit) return res.status(403).json({ message: 'You do not have permission to update this task.' });
     const payload = cleanUpdate(req.body, ['title', 'description', 'project', 'assignees', 'status', 'priority', 'progress', 'dueDate', 'completionCriteria']);
     const validationError = validateTaskPayload(payload);
@@ -505,7 +528,13 @@ app.patch('/api/tasks/:id', requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 app.delete('/api/tasks/:id', requireAuth, async (req, res, next) => {
-  try { const task = await Task.findOneAndDelete({ _id: req.params.id, creator: req.user.id }); if (!task) return res.status(404).json({ message: 'Task not found or you are not its creator.' }); res.status(204).end(); }
+  try {
+    const task = await Task.findOne({ _id: req.params.id, creator: req.user.id });
+    if (!task) return res.status(404).json({ message: 'Task not found or you are not its creator.' });
+    if (task.team && !(await getEditableTeam(task.team, req.user.id))) return res.status(403).json({ message: 'You only have view access to this team.' });
+    await task.deleteOne();
+    res.status(204).end();
+  }
   catch (error) { next(error); }
 });
 
@@ -522,22 +551,91 @@ app.patch('/api/bills/:id', requireAuth, async (req, res, next) => {
 });
 app.delete('/api/bills/:id', requireAuth, async (req, res, next) => { try { const bill = await Bill.findOneAndDelete({ _id: req.params.id, user: req.user.id }); if (!bill) return res.status(404).json({ message: 'Bill reminder not found.' }); res.status(204).end(); } catch (error) { next(error); } });
 
-app.get('/api/teams', requireAuth, async (req, res, next) => { try { res.json(await Team.find({ 'members.user': req.user.id }).populate('members.user', 'displayName email').sort({ updatedAt: -1 })); } catch (error) { next(error); } });
+app.get('/api/teams', requireAuth, async (req, res, next) => {
+  try {
+    res.json(await Team.find({ 'members.user': req.user.id })
+      .populate('owner', 'displayName email')
+      .populate('members.user', 'displayName email')
+      .sort({ updatedAt: -1 }));
+  } catch (error) { next(error); }
+});
 app.post('/api/teams', requireAuth, async (req, res, next) => {
   try {
-    const name = String(req.body.name || '').trim(); if (name.length < 2) return res.status(400).json({ message: 'Enter a team name.' });
-    const team = await Team.create({ name, description: req.body.description, owner: req.user.id, members: [{ user: req.user.id, role: 'owner' }] });
-    await Conversation.create({ team: team._id, name: 'general', participants: [req.user.id] }); res.status(201).json(await team.populate('members.user', 'displayName email'));
+    const name = String(req.body.name || '').trim();
+    const description = String(req.body.description || '').trim();
+    if (name.length < 2 || name.length > 100) return res.status(400).json({ message: 'Team name must be 2 to 100 characters.' });
+    if (description.length > 500) return res.status(400).json({ message: 'Team description must be 500 characters or fewer.' });
+    const team = await Team.create({ name, description, owner: req.user.id, members: [{ user: req.user.id, role: 'owner' }] });
+    await Conversation.create({ team: team._id, name: 'general', participants: [req.user.id] });
+    res.status(201).json(await populatedTeam(team));
+  } catch (error) { next(error); }
+});
+app.patch('/api/teams/:id', requireAuth, async (req, res, next) => {
+  try {
+    const team = await getManageableTeam(req.params.id, req.user.id);
+    if (!team) return res.status(403).json({ message: 'Only a team owner or manager can update team information.' });
+    if (req.body.name !== undefined) {
+      const name = String(req.body.name).trim();
+      if (name.length < 2 || name.length > 100) return res.status(400).json({ message: 'Team name must be 2 to 100 characters.' });
+      team.name = name;
+    }
+    if (req.body.description !== undefined) {
+      const description = String(req.body.description).trim();
+      if (description.length > 500) return res.status(400).json({ message: 'Team description must be 500 characters or fewer.' });
+      team.description = description;
+    }
+    await team.save();
+    res.json(await populatedTeam(team));
   } catch (error) { next(error); }
 });
 app.post('/api/teams/:id/members', requireAuth, async (req, res, next) => {
   try {
-    const team = await Team.findOne({ _id: req.params.id, $or: [{ owner: req.user.id }, { members: { $elemMatch: { user: req.user.id, role: 'manager' } } }] });
+    const team = await getManageableTeam(req.params.id, req.user.id);
     if (!team) return res.status(403).json({ message: 'Only a team owner or manager can add members.' });
     const user = await User.findOne({ email: normalizeEmail(req.body.email) }); if (!user) return res.status(404).json({ message: 'No KayaTo account uses that email address.' });
     if (team.members.some((member) => String(member.user) === String(user._id))) return res.status(409).json({ message: 'This person is already a team member.' });
-    team.members.push({ user: user._id, role: req.body.role || 'member' }); await team.save(); await Conversation.updateMany({ team: team._id }, { $addToSet: { participants: user._id } });
-    res.json(await team.populate('members.user', 'displayName email'));
+    const role = req.body.role || 'member';
+    if (!['manager', 'member', 'viewer'].includes(role)) return res.status(400).json({ message: 'Select a valid member role.' });
+    if (role === 'manager' && String(team.owner) !== req.user.id) return res.status(403).json({ message: 'Only the team owner can add a manager.' });
+    team.members.push({ user: user._id, role });
+    await team.save();
+    await Conversation.updateMany({ team: team._id }, { $addToSet: { participants: user._id } });
+    res.json(await populatedTeam(team));
+  } catch (error) { next(error); }
+});
+app.patch('/api/teams/:id/members/:userId', requireAuth, async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id) || !mongoose.isValidObjectId(req.params.userId)) return res.status(404).json({ message: 'Team member not found.' });
+    const team = await Team.findOne({ _id: req.params.id, owner: req.user.id });
+    if (!team) return res.status(403).json({ message: 'Only the team owner can change member access.' });
+    const memberIndex = team.members.findIndex((item) => String(item.user) === req.params.userId);
+    const member = team.members[memberIndex];
+    if (!member) return res.status(404).json({ message: 'Team member not found.' });
+    if (member.role === 'owner' || req.params.userId === String(team.owner)) return res.status(400).json({ message: 'The team owner role cannot be changed.' });
+    const role = String(req.body.role || '');
+    if (!['manager', 'member', 'viewer'].includes(role)) return res.status(400).json({ message: 'Select manager, can edit, or view only access.' });
+    member.role = role;
+    await team.save();
+    if (role === 'viewer') await Task.updateMany({ team: team._id }, { $pull: { assignees: member.user } });
+    res.json(await populatedTeam(team));
+  } catch (error) { next(error); }
+});
+app.delete('/api/teams/:id/members/:userId', requireAuth, async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id) || !mongoose.isValidObjectId(req.params.userId)) return res.status(404).json({ message: 'Team member not found.' });
+    const team = await Team.findOne({ _id: req.params.id, owner: req.user.id });
+    if (!team) return res.status(403).json({ message: 'Only the team owner can remove members.' });
+    const memberIndex = team.members.findIndex((item) => String(item.user) === req.params.userId);
+    const member = team.members[memberIndex];
+    if (!member) return res.status(404).json({ message: 'Team member not found.' });
+    if (member.role === 'owner' || req.params.userId === String(team.owner)) return res.status(400).json({ message: 'The team owner cannot be removed.' });
+    team.members.splice(memberIndex, 1);
+    await team.save();
+    await Promise.all([
+      Conversation.updateMany({ team: team._id }, { $pull: { participants: member.user } }),
+      Task.updateMany({ team: team._id }, { $pull: { assignees: member.user } }),
+    ]);
+    res.json(await populatedTeam(team));
   } catch (error) { next(error); }
 });
 

@@ -1,6 +1,7 @@
 
 import { ArrowRight, Pencil, Plus, Save, Search, Trash2, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../auth/AuthContext';
 import { api, errorMessage, formatDateInput } from '../lib/api';
 
 const columns = [
@@ -135,6 +136,7 @@ function getDeadlineStatus(task) {
 
 
 export default function Tasks() {
+  const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [teams, setTeams] = useState([]);
   const [scope, setScope] = useState('all');
@@ -200,6 +202,12 @@ export default function Tasks() {
       );
     });
   }, [items, scope, statusFilter, query]);
+
+  const editableTeamIds = useMemo(() => new Set(
+    teams
+      .filter((team) => team.members?.some((member) => String(member.user?._id || member.user) === String(user?.id) && member.role !== 'viewer'))
+      .map((team) => String(team._id)),
+  ), [teams, user?.id]);
 
   const visibleColumns =
     statusFilter === 'all'
@@ -449,6 +457,8 @@ export default function Tasks() {
                   
                {columnTasks.map((task) => {
                 const deadline = getDeadlineStatus(task);
+                const canEditTask = task.taskType !== 'team' || editableTeamIds.has(String(task.team?._id || task.team));
+                const canDeleteTask = canEditTask && String(task.creator?._id || task.creator) === String(user?.id);
 
                 return (
                 <article
@@ -467,7 +477,7 @@ export default function Tasks() {
                           {task.taskType}
                         </span>
 
-                        <button
+                        {canDeleteTask && <button
                           className="card-delete-action"
                           onClick={() =>
                             setPendingDelete(task)
@@ -475,7 +485,7 @@ export default function Tasks() {
                           aria-label={`Delete ${task.title}`}
                         >
                           <Trash2 size={15} />
-                        </button>
+                        </button>}
                       </div>
 
                       <h3>{task.title}</h3>
@@ -520,6 +530,7 @@ export default function Tasks() {
 
                         <select
                           value={task.status}
+                          disabled={!canEditTask}
                           onChange={(e) =>
                             updateStatus(
                               task,
@@ -539,6 +550,8 @@ export default function Tasks() {
                           )}
                         </select>
                       </label>
+
+                      {!canEditTask && <small className="card-view-only">View-only access</small>}
 
                       <button
                         type="button"
@@ -570,7 +583,7 @@ export default function Tasks() {
 
       {showCreate && (
         <CreateTask
-          teams={teams}
+          teams={teams.filter((team) => editableTeamIds.has(String(team._id)))}
           onClose={() =>
             setShowCreate(false)
           }
@@ -585,6 +598,7 @@ export default function Tasks() {
         <TaskDetails
           task={selectedTask}
           loading={detailsLoading}
+          canEdit={selectedTask.taskType !== 'team' || editableTeamIds.has(String(selectedTask.team?._id || selectedTask.team))}
           onClose={() => setSelectedTask(null)}
           onSaved={saveTask}
         />
@@ -652,7 +666,7 @@ function editFormFromTask(task) {
   };
 }
 
-function TaskDetails({ task, loading, onClose, onSaved }) {
+function TaskDetails({ task, loading, canEdit, onClose, onSaved }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(() => editFormFromTask(task));
   const [errors, setErrors] = useState({});
@@ -896,7 +910,7 @@ function TaskDetails({ task, loading, onClose, onSaved }) {
 
             <div className="modal-actions">
               <button type="button" className="button button-secondary" onClick={onClose}>Close</button>
-              <button type="button" className="button button-primary" onClick={beginEditing}><Pencil size={16} />Edit task</button>
+              {canEdit && <button type="button" className="button button-primary" onClick={beginEditing}><Pencil size={16} />Edit task</button>}
             </div>
           </div>
         )}
