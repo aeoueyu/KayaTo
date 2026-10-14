@@ -1,5 +1,5 @@
 
-import { Plus, Search, Trash2, Users } from 'lucide-react';
+import { ArrowRight, Pencil, Plus, Save, Search, Trash2, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { api, errorMessage, formatDateInput } from '../lib/api';
 
@@ -70,6 +70,25 @@ function dueLabel(value) {
   }).format(date);
 }
 
+function fullDateLabel(value) {
+  if (!value) return 'Not set';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Not set';
+  return new Intl.DateTimeFormat('en-PH', {
+    dateStyle: 'medium',
+  }).format(date);
+}
+
+function dateTimeLabel(value) {
+  if (!value) return 'Not available';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Not available';
+  return new Intl.DateTimeFormat('en-PH', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
+}
+
 function getDeadlineStatus(task) {
   if (!task.dueDate || task.status === 'done') {
     return null;
@@ -125,6 +144,8 @@ export default function Tasks() {
   const [error, setError] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -222,6 +243,32 @@ export default function Tasks() {
     } catch (requestError) {
       setError(errorMessage(requestError));
     }
+  };
+
+  const openTask = async (task) => {
+    setSelectedTask(task);
+    setDetailsLoading(true);
+    setError('');
+
+    try {
+      const response = await api.get(`/tasks/${task._id}`);
+      const detailedTask = extractTask(response.data);
+      setSelectedTask(detailedTask);
+    } catch (requestError) {
+      setSelectedTask(null);
+      setError(errorMessage(requestError, 'Unable to load task details.'));
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  const saveTask = (updatedTask) => {
+    setItems((current) =>
+      current.map((item) =>
+        item._id === updatedTask._id ? updatedTask : item
+      )
+    );
+    setSelectedTask(updatedTask);
   };
 
   const remove = async () => {
@@ -492,6 +539,15 @@ export default function Tasks() {
                           )}
                         </select>
                       </label>
+
+                      <button
+                        type="button"
+                        className="card-open-action"
+                        onClick={() => openTask(task)}
+                      >
+                        View complete details
+                        <ArrowRight size={14} aria-hidden="true" />
+                      </button>
                     </article>
                      );
                   })}
@@ -522,6 +578,15 @@ export default function Tasks() {
             setShowCreate(false);
             await load();
           }}
+        />
+      )}
+
+      {selectedTask && (
+        <TaskDetails
+          task={selectedTask}
+          loading={detailsLoading}
+          onClose={() => setSelectedTask(null)}
+          onSaved={saveTask}
         />
       )}
 
@@ -569,6 +634,274 @@ export default function Tasks() {
         </div>
       )}
     </section>
+  );
+}
+
+function editFormFromTask(task) {
+  return {
+    title: task.title || '',
+    description: task.description || '',
+    project: task.project || '',
+    status: task.status || 'todo',
+    priority: task.priority || 'medium',
+    progress: String(task.progress ?? 0),
+    dueDate: formatDateInput(task.dueDate),
+    completionCriteria: Array.isArray(task.completionCriteria)
+      ? task.completionCriteria.join('\n')
+      : '',
+  };
+}
+
+function TaskDetails({ task, loading, onClose, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState(() => editFormFromTask(task));
+  const [errors, setErrors] = useState({});
+  const [requestError, setRequestError] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setForm(editFormFromTask(task));
+  }, [task]);
+
+  const change = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+    setErrors((current) => ({ ...current, [field]: '' }));
+    setMessage('');
+  };
+
+  const beginEditing = () => {
+    setForm(editFormFromTask(task));
+    setErrors({});
+    setRequestError('');
+    setMessage('');
+    setEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setForm(editFormFromTask(task));
+    setErrors({});
+    setRequestError('');
+    setEditing(false);
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+    const nextErrors = {};
+    const title = form.title.trim();
+    const description = form.description.trim();
+    const project = form.project.trim();
+    const progress = Number(form.progress);
+    const criteria = form.completionCriteria
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    if (!title) nextErrors.title = 'Enter a task title.';
+    else if (title.length > 180) nextErrors.title = 'Use 180 characters or fewer.';
+    if (description.length > 5000) nextErrors.description = 'Use 5,000 characters or fewer.';
+    if (project.length > 120) nextErrors.project = 'Use 120 characters or fewer.';
+    if (!Number.isFinite(progress) || progress < 0 || progress > 100) nextErrors.progress = 'Enter a value from 0 to 100.';
+    if (criteria.length > 20) nextErrors.completionCriteria = 'Add no more than 20 criteria.';
+    else if (criteria.some((item) => item.length > 300)) nextErrors.completionCriteria = 'Keep each criterion to 300 characters or fewer.';
+
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      return;
+    }
+
+    setBusy(true);
+    setRequestError('');
+    setMessage('');
+
+    try {
+      const response = await api.patch(`/tasks/${task._id}`, {
+        title,
+        description,
+        project,
+        status: form.status,
+        priority: form.priority,
+        progress: form.status === 'done' ? 100 : progress,
+        dueDate: form.dueDate || null,
+        completionCriteria: criteria,
+      });
+      const updatedTask = extractTask(response.data);
+      onSaved(updatedTask);
+      setEditing(false);
+      setMessage('Task changes saved.');
+    } catch (error) {
+      setRequestError(errorMessage(error, 'Unable to save task changes.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const statusLabel = columns.find(([value]) => value === task.status)?.[1] || task.status;
+  const teamName = typeof task.team === 'object' ? task.team?.name : '';
+  const assignees = Array.isArray(task.assignees) ? task.assignees : [];
+  const criteria = Array.isArray(task.completionCriteria) ? task.completionCriteria : [];
+
+  return (
+    <div className="modal-backdrop" onMouseDown={onClose}>
+      <section
+        className="modal task-details-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="task-details-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="modal-head task-details-head">
+          <div>
+            <span className={`task-kind ${task.taskType}`}>{task.taskType === 'team' && <Users size={12} />} {task.taskType}</span>
+            <h2 id="task-details-title">{editing ? 'Edit task' : task.title}</h2>
+            <p>{editing ? 'Update the fields below, then validate and save your changes.' : 'Complete task details'}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close task details">×</button>
+        </div>
+
+        {loading ? (
+          <div className="app-loading"><span className="loading-spinner" />Loading complete details...</div>
+        ) : editing ? (
+          <form className="task-edit-form" onSubmit={submit} noValidate>
+            {requestError && <p className="form-error" role="alert">{requestError}</p>}
+
+            <label className="field-label">
+              Task title
+              <input
+                value={form.title}
+                onChange={(event) => change('title', event.target.value)}
+                maxLength="180"
+                required
+                autoFocus
+                aria-invalid={Boolean(errors.title)}
+              />
+              {errors.title && <small className="field-error">{errors.title}</small>}
+            </label>
+
+            <div className="form-grid">
+              <label className="field-label">
+                Project
+                <input
+                  value={form.project}
+                  onChange={(event) => change('project', event.target.value)}
+                  maxLength="120"
+                  aria-invalid={Boolean(errors.project)}
+                />
+                {errors.project && <small className="field-error">{errors.project}</small>}
+              </label>
+              <label className="field-label">
+                Due date
+                <input type="date" value={form.dueDate} onChange={(event) => change('dueDate', event.target.value)} />
+              </label>
+            </div>
+
+            <div className="form-grid">
+              <label className="field-label">
+                Status
+                <select value={form.status} onChange={(event) => change('status', event.target.value)}>
+                  {columns.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
+              <label className="field-label">
+                Priority
+                <select value={form.priority} onChange={(event) => change('priority', event.target.value)}>
+                  {['low', 'medium', 'high', 'urgent'].map((value) => <option key={value} value={value}>{value[0].toUpperCase() + value.slice(1)}</option>)}
+                </select>
+              </label>
+            </div>
+
+            <label className="field-label">
+              Progress ({form.status === 'done' ? 100 : form.progress}%)
+              <div className="progress-edit-row">
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={form.status === 'done' ? 100 : form.progress}
+                  disabled={form.status === 'done'}
+                  onChange={(event) => change('progress', event.target.value)}
+                />
+                <input
+                  className="progress-number"
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={form.status === 'done' ? 100 : form.progress}
+                  disabled={form.status === 'done'}
+                  onChange={(event) => change('progress', event.target.value)}
+                  aria-invalid={Boolean(errors.progress)}
+                />
+              </div>
+              {errors.progress && <small className="field-error">{errors.progress}</small>}
+              {form.status === 'done' && <small>Completed tasks are saved at 100% progress.</small>}
+            </label>
+
+            <label className="field-label">
+              Description
+              <textarea
+                rows="5"
+                value={form.description}
+                onChange={(event) => change('description', event.target.value)}
+                maxLength="5000"
+                aria-invalid={Boolean(errors.description)}
+              />
+              {errors.description && <small className="field-error">{errors.description}</small>}
+            </label>
+
+            <label className="field-label">
+              Completion criteria
+              <textarea
+                rows="4"
+                value={form.completionCriteria}
+                onChange={(event) => change('completionCriteria', event.target.value)}
+                placeholder="Add one criterion per line"
+                aria-invalid={Boolean(errors.completionCriteria)}
+              />
+              {errors.completionCriteria
+                ? <small className="field-error">{errors.completionCriteria}</small>
+                : <small>One criterion per line, up to 20.</small>}
+            </label>
+
+            <div className="modal-actions">
+              <button type="button" className="button button-secondary" onClick={cancelEditing} disabled={busy}>Cancel changes</button>
+              <button className="button button-primary" disabled={busy}><Save size={16} />{busy ? 'Saving...' : 'Save changes'}</button>
+            </div>
+          </form>
+        ) : (
+          <div className="task-details-content">
+            {message && <p className="form-success" role="status">{message}</p>}
+            <p className="task-detail-description">{task.description || 'No description provided.'}</p>
+
+            <dl className="task-detail-grid">
+              <div><dt>Project</dt><dd>{task.project || 'Not assigned'}</dd></div>
+              <div><dt>Task type</dt><dd>{task.taskType === 'team' ? `Team${teamName ? ` · ${teamName}` : ''}` : 'Personal'}</dd></div>
+              <div><dt>Status</dt><dd>{statusLabel}</dd></div>
+              <div><dt>Priority</dt><dd className={`detail-priority ${task.priority}`}>{task.priority || 'Not set'}</dd></div>
+              <div><dt>Progress</dt><dd>{task.progress ?? 0}%</dd></div>
+              <div><dt>Due date</dt><dd>{fullDateLabel(task.dueDate)}</dd></div>
+              <div><dt>Assignees</dt><dd>{assignees.length ? assignees.map((user) => user.displayName || user.email || 'Team member').join(', ') : 'Unassigned'}</dd></div>
+              <div><dt>Created by</dt><dd>{task.creator?.displayName || task.creator?.email || 'Account owner'}</dd></div>
+              <div><dt>Source</dt><dd>{task.aiGenerated ? 'AI planner' : 'Created manually'}</dd></div>
+              <div><dt>Created</dt><dd>{dateTimeLabel(task.createdAt)}</dd></div>
+              <div><dt>Last updated</dt><dd>{dateTimeLabel(task.updatedAt)}</dd></div>
+            </dl>
+
+            <section className="task-criteria-section">
+              <h3>Completion criteria</h3>
+              {criteria.length
+                ? <ul>{criteria.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul>
+                : <p>No completion criteria added.</p>}
+            </section>
+
+            <div className="modal-actions">
+              <button type="button" className="button button-secondary" onClick={onClose}>Close</button>
+              <button type="button" className="button button-primary" onClick={beginEditing}><Pencil size={16} />Edit task</button>
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 

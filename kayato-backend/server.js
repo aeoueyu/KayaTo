@@ -4,7 +4,7 @@ import cors from 'cors';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
-import { resolve4, resolve6, resolveMx } from 'node:dns/promises';
+import { lookup, resolveMx } from 'node:dns/promises';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -189,13 +189,17 @@ async function emailDomainAcceptsMail(email) {
   try {
     const records = await resolveMx(domain);
     status = records.some((record) => Boolean(record.exchange)) ? 'valid' : 'invalid';
-  } catch (error) {
-    if (!['ENODATA', 'ENOTFOUND'].includes(error.code)) return 'unavailable';
+  } catch {
+    // c-ares DNS queries can be unavailable on otherwise connected Windows
+    // machines. The OS resolver still provides a standards-compliant fallback:
+    // a domain without MX records may receive mail through its address record.
     try {
-      const addresses = await Promise.any([resolve4(domain), resolve6(domain)]);
+      const addresses = await lookup(domain, { all: true });
       status = addresses.length > 0 ? 'valid' : 'invalid';
-    } catch {
-      status = 'invalid';
+    } catch (error) {
+      status = ['ENODATA', 'ENOTFOUND', 'EAI_NONAME'].includes(error.code)
+        ? 'invalid'
+        : 'unavailable';
     }
   }
   emailDomainCache.set(domain, { status, expiresAt: Date.now() + 30 * 60_000 });
@@ -222,6 +226,42 @@ function cleanUpdate(body, allowed) { return Object.fromEntries(Object.entries(b
 const otpHash = (email, code) => createHash('sha256').update(`${email}:${code}:${jwtSecret}`).digest('hex');
 const passwordIsStrong = (password) => password.length >= 8 && password.length <= 64 && /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
 const safeEqual = (left, right) => { const a = Buffer.from(left); const b = Buffer.from(right); return a.length === b.length && timingSafeEqual(a, b); };
+const taskStatuses = new Set(['todo', 'in-progress', 'review', 'done']);
+const taskPriorities = new Set(['low', 'medium', 'high', 'urgent']);
+function validateTaskPayload(payload, { requireTitle = false } = {}) {
+  if (requireTitle || payload.title !== undefined) {
+    if (typeof payload.title !== 'string' || !payload.title.trim()) return 'Task title is required.';
+    payload.title = payload.title.trim();
+    if (payload.title.length > 180) return 'Task title must be 180 characters or fewer.';
+  }
+  if (payload.description !== undefined) {
+    if (typeof payload.description !== 'string') return 'Task description must be text.';
+    payload.description = payload.description.trim();
+    if (payload.description.length > 5000) return 'Task description must be 5,000 characters or fewer.';
+  }
+  if (payload.project !== undefined) {
+    if (typeof payload.project !== 'string') return 'Project must be text.';
+    payload.project = payload.project.trim();
+    if (payload.project.length > 120) return 'Project must be 120 characters or fewer.';
+  }
+  if (payload.status !== undefined && !taskStatuses.has(payload.status)) return 'Select a valid task status.';
+  if (payload.priority !== undefined && !taskPriorities.has(payload.priority)) return 'Select a valid task priority.';
+  if (payload.progress !== undefined) {
+    const progress = Number(payload.progress);
+    if (!Number.isFinite(progress) || progress < 0 || progress > 100) return 'Progress must be between 0 and 100.';
+    payload.progress = progress;
+  }
+  if (payload.dueDate !== undefined) {
+    if (payload.dueDate === '' || payload.dueDate === null) payload.dueDate = null;
+    else if (Number.isNaN(new Date(payload.dueDate).getTime())) return 'Enter a valid due date.';
+  }
+  if (payload.completionCriteria !== undefined) {
+    if (!Array.isArray(payload.completionCriteria) || payload.completionCriteria.length > 20) return 'Add no more than 20 completion criteria.';
+    payload.completionCriteria = payload.completionCriteria.map((item) => String(item).trim()).filter(Boolean);
+    if (payload.completionCriteria.some((item) => item.length > 300)) return 'Each completion criterion must be 300 characters or fewer.';
+  }
+  return '';
+}
 const escapeHtml = (value = '') => String(value).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
 const buildSignupOtpEmail = (code) => {
   const digits = String(code).split('').map((digit) => `
@@ -423,14 +463,28 @@ app.get('/api/tasks', requireAuth, async (req, res, next) => {
     const teams = await Team.find({ 'members.user': req.user.id }).select('_id');
     const query = { $or: [{ creator: req.user.id }, { assignees: req.user.id }, { team: { $in: teams.map((team) => team._id) } }] };
     if (req.query.type) query.taskType = req.query.type; if (req.query.status) query.status = req.query.status;
-    res.json(await Task.find(query).populate('assignees', 'displayName email').sort({ dueDate: 1, createdAt: -1 }));
+    res.json(await Task.find(query).populate('team', 'name').populate('assignees', 'displayName email').sort({ dueDate: 1, createdAt: -1 }));
+  } catch (error) { next(error); }
+});
+app.get('/api/tasks/:id', requireAuth, async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ message: 'Task not found.' });
+    const task = await Task.findById(req.params.id).populate('creator', 'displayName email').populate('team', 'name').populate('assignees', 'displayName email');
+    if (!task) return res.status(404).json({ message: 'Task not found.' });
+    const canView = String(task.creator?._id || task.creator) === req.user.id || task.assignees.some((user) => String(user._id || user) === req.user.id) || (task.team && await getAuthorizedTeam(task.team._id || task.team, req.user.id));
+    if (!canView) return res.status(403).json({ message: 'You do not have permission to view this task.' });
+    res.json(task);
   } catch (error) { next(error); }
 });
 app.post('/api/tasks', requireAuth, async (req, res, next) => {
   try {
     const payload = cleanUpdate(req.body, ['title', 'description', 'project', 'taskType', 'team', 'assignees', 'status', 'priority', 'progress', 'dueDate', 'aiGenerated', 'completionCriteria']);
+    const validationError = validateTaskPayload(payload, { requireTitle: true });
+    if (validationError) return res.status(400).json({ message: validationError });
     if (payload.taskType === 'team' && !(await getAuthorizedTeam(payload.team, req.user.id))) return res.status(403).json({ message: 'Select a team you belong to.' });
     const task = await Task.create({ ...payload, creator: req.user.id, assignees: payload.assignees?.length ? payload.assignees : [req.user.id] });
+    await task.populate('creator', 'displayName email');
+    await task.populate('team', 'name');
     res.status(201).json(await task.populate('assignees', 'displayName email'));
   } catch (error) { next(error); }
 });
@@ -439,8 +493,15 @@ app.patch('/api/tasks/:id', requireAuth, async (req, res, next) => {
     const task = await Task.findById(req.params.id); if (!task) return res.status(404).json({ message: 'Task not found.' });
     const canEdit = String(task.creator) === req.user.id || task.assignees.some((id) => String(id) === req.user.id) || (task.team && await getAuthorizedTeam(task.team, req.user.id));
     if (!canEdit) return res.status(403).json({ message: 'You do not have permission to update this task.' });
-    Object.assign(task, cleanUpdate(req.body, ['title', 'description', 'project', 'assignees', 'status', 'priority', 'progress', 'dueDate', 'completionCriteria']));
-    if (task.status === 'done') task.progress = 100; await task.save(); res.json(await task.populate('assignees', 'displayName email'));
+    const payload = cleanUpdate(req.body, ['title', 'description', 'project', 'assignees', 'status', 'priority', 'progress', 'dueDate', 'completionCriteria']);
+    const validationError = validateTaskPayload(payload);
+    if (validationError) return res.status(400).json({ message: validationError });
+    Object.assign(task, payload);
+    if (task.status === 'done') task.progress = 100;
+    await task.save();
+    await task.populate('creator', 'displayName email');
+    await task.populate('team', 'name');
+    res.json(await task.populate('assignees', 'displayName email'));
   } catch (error) { next(error); }
 });
 app.delete('/api/tasks/:id', requireAuth, async (req, res, next) => {
