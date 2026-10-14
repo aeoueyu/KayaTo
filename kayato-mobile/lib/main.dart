@@ -2539,14 +2539,108 @@ class ChatTab extends StatefulWidget {
 
 class _ChatTabState extends State<ChatTab> {
   List conversations = [], messages = [];
+  List<Map<String, dynamic>> mentionSuggestions = [];
   Map? active;
   final text = TextEditingController();
+  int? mentionStart;
   String? error;
   bool loading = true, conversationsOpen = false;
   @override
   void initState() {
     super.initState();
     loadConversations();
+  }
+
+  @override
+  void dispose() {
+    text.dispose();
+    super.dispose();
+  }
+
+  List<Map<String, dynamic>> mentionCandidates() {
+    final candidates = <Map<String, dynamic>>[
+      {
+        'id': 'kaya-assistant',
+        'displayName': 'Kaya',
+        'username': 'kaya',
+        'assistant': true,
+      },
+    ];
+    final seen = <String>{'kaya'};
+    final currentUserId = '${widget.user['id'] ?? widget.user['_id']}';
+    for (final participant in active?['participants'] as List? ?? const []) {
+      final person = Map<String, dynamic>.from(participant as Map);
+      final personId = '${person['_id'] ?? person['id']}';
+      final username =
+          person['username']?.toString().trim().toLowerCase() ?? '';
+      if (personId == currentUserId ||
+          username.isEmpty ||
+          !seen.add(username)) {
+        continue;
+      }
+      candidates.add({
+        ...person,
+        'id': personId,
+        'username': username,
+        'displayName': person['displayName']?.toString() ?? username,
+        'assistant': false,
+      });
+    }
+    return candidates;
+  }
+
+  void updateMentionSuggestions() {
+    final cursor = text.selection.baseOffset;
+    if (cursor < 0 || cursor > text.text.length) {
+      setState(() {
+        mentionStart = null;
+        mentionSuggestions = [];
+      });
+      return;
+    }
+    final beforeCursor = text.text.substring(0, cursor);
+    final match = RegExp(
+      r'(^|[\s(])@([A-Za-z0-9_]*)$',
+    ).firstMatch(beforeCursor);
+    if (match == null) {
+      if (mentionSuggestions.isNotEmpty || mentionStart != null) {
+        setState(() {
+          mentionStart = null;
+          mentionSuggestions = [];
+        });
+      }
+      return;
+    }
+    final query = (match.group(2) ?? '').toLowerCase();
+    final matches = mentionCandidates()
+        .where((candidate) {
+          final username = candidate['username'].toString().toLowerCase();
+          final displayName = candidate['displayName'].toString().toLowerCase();
+          return username.contains(query) || displayName.contains(query);
+        })
+        .take(5)
+        .toList();
+    setState(() {
+      mentionStart = match.start + (match.group(1)?.length ?? 0);
+      mentionSuggestions = matches;
+    });
+  }
+
+  void insertMention(Map<String, dynamic> candidate) {
+    final start = mentionStart;
+    final cursor = text.selection.baseOffset;
+    if (start == null || cursor < start) return;
+    final mention = '@${candidate['username']} ';
+    final nextText = text.text.replaceRange(start, cursor, mention);
+    final nextCursor = start + mention.length;
+    text.value = TextEditingValue(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: nextCursor),
+    );
+    setState(() {
+      mentionStart = null;
+      mentionSuggestions = [];
+    });
   }
 
   Future<void> loadConversations() async {
@@ -2630,6 +2724,8 @@ class _ChatTabState extends State<ChatTab> {
       messages = [];
       error = null;
       conversationsOpen = false;
+      mentionStart = null;
+      mentionSuggestions = [];
     });
     try {
       await loadMessages();
@@ -2650,6 +2746,10 @@ class _ChatTabState extends State<ChatTab> {
     final content = text.text.trim();
     if (content.isEmpty || active == null) return;
     text.clear();
+    setState(() {
+      mentionStart = null;
+      mentionSuggestions = [];
+    });
     try {
       final data = await widget.api.request(
         '/conversations/${active!['_id']}/messages',
@@ -2672,6 +2772,35 @@ class _ChatTabState extends State<ChatTab> {
       message['senderType'] != 'ai' &&
       '${message['sender']?['_id'] ?? message['sender']}' ==
           '${widget.user['id'] ?? widget.user['_id']}';
+
+  TextSpan messageContent(String content, Color foreground, Color highlight) {
+    final mentions = RegExp(r'@[A-Za-z0-9_]{1,24}');
+    final spans = <InlineSpan>[];
+    var cursor = 0;
+    for (final match in mentions.allMatches(content)) {
+      if (match.start > cursor) {
+        spans.add(TextSpan(text: content.substring(cursor, match.start)));
+      }
+      spans.add(
+        TextSpan(
+          text: match.group(0),
+          style: TextStyle(
+            color: foreground,
+            backgroundColor: highlight,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+      cursor = match.end;
+    }
+    if (cursor < content.length) {
+      spans.add(TextSpan(text: content.substring(cursor)));
+    }
+    return TextSpan(
+      style: TextStyle(color: foreground, height: 1.45),
+      children: spans,
+    );
+  }
 
   Widget messageBubble(BuildContext context, Map message) {
     final own = isOwnMessage(message);
@@ -2730,9 +2859,14 @@ class _ChatTabState extends State<ChatTab> {
               ),
               const SizedBox(height: 5),
             ],
-            Text(
-              message['content'],
-              style: TextStyle(color: foreground, height: 1.45),
+            Text.rich(
+              messageContent(
+                message['content']?.toString() ?? '',
+                foreground,
+                own
+                    ? scheme.onPrimary.withValues(alpha: 0.2)
+                    : scheme.primary.withValues(alpha: 0.14),
+              ),
             ),
           ],
         ),
@@ -2954,24 +3088,92 @@ class _ChatTabState extends State<ChatTab> {
               color: scheme.surface.withValues(alpha: 0.94),
               border: Border(top: BorderSide(color: scheme.outlineVariant)),
             ),
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: text,
-                    enabled: active != null,
-                    minLines: 1,
-                    maxLines: 4,
-                    decoration: const InputDecoration(
-                      hintText: 'Message or mention @Kaya',
+                if (mentionSuggestions.isNotEmpty) ...[
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 220),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerLow,
+                      border: Border.all(color: scheme.outlineVariant),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      itemCount: mentionSuggestions.length,
+                      itemBuilder: (context, index) {
+                        final candidate = mentionSuggestions[index];
+                        final assistant = candidate['assistant'] == true;
+                        final displayName = candidate['displayName'].toString();
+                        return ListTile(
+                          dense: true,
+                          minTileHeight: 48,
+                          leading: CircleAvatar(
+                            radius: 16,
+                            backgroundColor: assistant
+                                ? scheme.primary.withValues(alpha: 0.14)
+                                : scheme.secondaryContainer,
+                            foregroundColor: assistant
+                                ? scheme.primary
+                                : scheme.onSecondaryContainer,
+                            child: assistant
+                                ? const Icon(
+                                    Icons.auto_awesome_rounded,
+                                    size: 17,
+                                  )
+                                : Text(
+                                    displayName
+                                        .split(RegExp(r'\s+'))
+                                        .where((part) => part.isNotEmpty)
+                                        .take(2)
+                                        .map((part) => part[0].toUpperCase())
+                                        .join(),
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                          ),
+                          title: Text(
+                            displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          subtitle: Text('@${candidate['username']}'),
+                          onTap: () => insertMention(candidate),
+                        );
+                      },
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.filled(
-                  onPressed: active == null ? null : send,
-                  tooltip: 'Send message',
-                  icon: const Icon(Icons.send_rounded),
+                ],
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: text,
+                        enabled: active != null,
+                        minLines: 1,
+                        maxLines: 4,
+                        textInputAction: TextInputAction.newline,
+                        onChanged: (_) => updateMentionSuggestions(),
+                        onTap: updateMentionSuggestions,
+                        decoration: const InputDecoration(
+                          hintText: 'Message or mention @Kaya',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filled(
+                      onPressed: active == null ? null : send,
+                      tooltip: 'Send message',
+                      icon: const Icon(Icons.send_rounded),
+                    ),
+                  ],
                 ),
               ],
             ),
