@@ -61,6 +61,15 @@ const supportedEmailDomains = new Set([
   'tuta.com', 'tutanota.com', 'hey.com',
   ...(process.env.ALLOWED_EMAIL_DOMAINS || '').split(',').map((value) => value.trim().toLowerCase()).filter(Boolean),
 ]);
+const supportedCurrencies = new Set(['PHP', 'USD', 'EUR', 'GBP', 'JPY', 'SGD', 'AUD', 'CAD']);
+const timezoneIsValid = (value) => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: String(value) }).format();
+    return true;
+  } catch {
+    return false;
+  }
+};
 const emailLogoContent = readFileSync(new URL('./assets/kayato-email-logo.png', import.meta.url));
 const configuredOrigins = (process.env.CLIENT_URL || 'http://localhost:5173,http://127.0.0.1:5173')
   .split(',').map((value) => value.trim()).filter(Boolean);
@@ -112,8 +121,8 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true, trim: true, minlength: 6, maxlength: 254 },
   passwordHash: { type: String, required: true, select: false },
   profilePicture: String,
-  timezone: { type: String, default: 'Asia/Manila' },
-  currency: { type: String, default: 'PHP', uppercase: true },
+  timezone: { type: String, default: 'Asia/Manila', validate: { validator: timezoneIsValid, message: 'Choose a valid timezone.' } },
+  currency: { type: String, default: 'PHP', uppercase: true, enum: [...supportedCurrencies] },
   primaryUsage: { type: String, enum: ['personal', 'team', 'both'], default: 'both' },
   onboardingCompleted: { type: Boolean, default: false },
   notificationPreferences: {
@@ -161,7 +170,7 @@ const billSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, maxlength: 120 },
   category: { type: String, trim: true, default: 'Other' },
   amount: { type: Number, required: true, min: 0 },
-  currency: { type: String, uppercase: true, default: 'PHP' },
+  currency: { type: String, uppercase: true, default: 'PHP', enum: [...supportedCurrencies] },
   dueDate: { type: Date, required: true },
   billingCycle: { type: String, enum: ['one_time', 'weekly', 'monthly', 'quarterly', 'yearly'], default: 'monthly' },
   reminderDaysBefore: { type: [Number], default: [3, 1] },
@@ -608,6 +617,8 @@ const zonedDayNumber = (date, timeZone = 'Asia/Manila') => {
   return Math.floor(Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day)) / 86_400_000);
 };
 const zonedDayKey = (date, timeZone) => String(zonedDayNumber(date, timeZone));
+const storedDateDayNumber = (date) => Math.floor(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 86_400_000);
+const storedDateDayKey = (date) => String(storedDateDayNumber(date));
 async function runReminderSweep() {
   if (reminderSweepPromise) return reminderSweepPromise;
   reminderSweepPromise = (async () => {
@@ -622,7 +633,7 @@ async function runReminderSweep() {
     for (const task of tasks) {
       const users = await User.find({ _id: { $in: taskUserIds(task) } });
       for (const user of users) {
-        const days = zonedDayNumber(task.dueDate, user.timezone) - zonedDayNumber(now, user.timezone);
+        const days = storedDateDayNumber(task.dueDate) - zonedDayNumber(now, user.timezone);
         if (days > 1) continue;
         const state = days < 0 ? 'overdue' : days === 0 ? 'today' : 'tomorrow';
         const message = days < 0 ? `Task “${task.title}” is overdue.` : `Task “${task.title}” is due ${state}.`;
@@ -630,7 +641,7 @@ async function runReminderSweep() {
           user, category: 'deadlines', task: task._id, team: task.team, type: `task-deadline-${state}`,
           title: days < 0 ? 'Overdue task' : 'Upcoming task deadline', message,
           url: `/app/tasks?task=${task._id}${task.team ? `&team=${task.team}` : ''}`,
-          dedupeKey: `task:${task._id}:${state}:${days < 0 ? zonedDayKey(now, user.timezone) : zonedDayKey(task.dueDate, user.timezone)}`,
+          dedupeKey: `task:${task._id}:${state}:${days < 0 ? zonedDayKey(now, user.timezone) : storedDateDayKey(task.dueDate)}`,
         });
         if (notification) created += 1;
       }
@@ -638,7 +649,7 @@ async function runReminderSweep() {
     for (const bill of bills) {
       const user = bill.user;
       if (!user) continue;
-      const days = zonedDayNumber(bill.dueDate, user.timezone) - zonedDayNumber(now, user.timezone);
+      const days = storedDateDayNumber(bill.dueDate) - zonedDayNumber(now, user.timezone);
       const reminderDays = new Set([0, ...(bill.reminderDaysBefore || [])].map(Number));
       if (days > 0 && !reminderDays.has(days)) continue;
       if (days < 0 && days < -30) continue;
@@ -647,7 +658,7 @@ async function runReminderSweep() {
       const notification = await createAndDeliverNotification({
         user, category: 'bills', bill: bill._id, type: days < 0 ? 'bill-overdue' : 'bill-reminder',
         title: days < 0 ? 'Overdue bill' : 'Upcoming bill', message, url: `/app/bills?bill=${bill._id}`,
-        dedupeKey: `bill:${bill._id}:${days < 0 ? `overdue:${zonedDayKey(now, user.timezone)}` : `due:${days}:${zonedDayKey(bill.dueDate, user.timezone)}`}`,
+        dedupeKey: `bill:${bill._id}:${days < 0 ? `overdue:${zonedDayKey(now, user.timezone)}` : `due:${days}:${storedDateDayKey(bill.dueDate)}`}`,
       });
       if (notification) created += 1;
     }
@@ -783,6 +794,14 @@ app.patch('/api/auth/me', requireAuth, async (req, res, next) => {
       update.username = normalizeUsername(update.username);
       if (!usernameIsValid(update.username)) return res.status(400).json({ message: 'Use 3 to 24 lowercase letters, numbers, or underscores for your username.' });
       if (await User.exists({ username: update.username, _id: { $ne: req.user.id } })) return res.status(409).json({ message: 'This username is already taken.' });
+    }
+    if (Object.hasOwn(update, 'timezone')) {
+      update.timezone = String(update.timezone || '').trim();
+      if (!timezoneIsValid(update.timezone)) return res.status(400).json({ message: 'Choose a valid timezone.' });
+    }
+    if (Object.hasOwn(update, 'currency')) {
+      update.currency = String(update.currency || '').trim().toUpperCase();
+      if (!supportedCurrencies.has(update.currency)) return res.status(400).json({ message: 'Choose a supported currency.' });
     }
     const user = await User.findByIdAndUpdate(req.user.id, update, { new: true, runValidators: true }); res.json(publicUser(user));
   } catch (error) { next(error); }
@@ -1004,12 +1023,24 @@ app.get('/api/internal/reminders/run', async (req, res, next) => {
 
 app.get('/api/bills', requireAuth, async (req, res, next) => { try { res.json(await Bill.find({ user: req.user.id }).sort({ dueDate: 1 })); } catch (error) { next(error); } });
 app.post('/api/bills', requireAuth, async (req, res, next) => {
-  try { const payload = cleanUpdate(req.body, ['name', 'category', 'amount', 'currency', 'dueDate', 'billingCycle', 'reminderDaysBefore', 'status', 'officialPaymentUrl']); res.status(201).json(await Bill.create({ ...payload, user: req.user.id })); }
+  try {
+    const payload = cleanUpdate(req.body, ['name', 'category', 'amount', 'currency', 'dueDate', 'billingCycle', 'reminderDaysBefore', 'status', 'officialPaymentUrl']);
+    const user = await User.findById(req.user.id).select('currency');
+    if (!user) return res.status(404).json({ message: 'Account not found.' });
+    payload.currency = String(payload.currency || user.currency || 'PHP').toUpperCase();
+    if (!supportedCurrencies.has(payload.currency)) return res.status(400).json({ message: 'Choose a supported currency.' });
+    res.status(201).json(await Bill.create({ ...payload, user: req.user.id }));
+  }
   catch (error) { next(error); }
 });
 app.patch('/api/bills/:id', requireAuth, async (req, res, next) => {
   try {
-    const update = cleanUpdate(req.body, ['name', 'category', 'amount', 'currency', 'dueDate', 'billingCycle', 'reminderDaysBefore', 'status', 'officialPaymentUrl', 'paidAt']); if (update.status === 'paid' && !update.paidAt) update.paidAt = new Date();
+    const update = cleanUpdate(req.body, ['name', 'category', 'amount', 'currency', 'dueDate', 'billingCycle', 'reminderDaysBefore', 'status', 'officialPaymentUrl', 'paidAt']);
+    if (Object.hasOwn(update, 'currency')) {
+      update.currency = String(update.currency || '').toUpperCase();
+      if (!supportedCurrencies.has(update.currency)) return res.status(400).json({ message: 'Choose a supported currency.' });
+    }
+    if (update.status === 'paid' && !update.paidAt) update.paidAt = new Date();
     const bill = await Bill.findOneAndUpdate({ _id: req.params.id, user: req.user.id }, update, { new: true, runValidators: true }); if (!bill) return res.status(404).json({ message: 'Bill reminder not found.' }); res.json(bill);
   } catch (error) { next(error); }
 });
@@ -1420,8 +1451,10 @@ app.post('/api/planner/generate', requireAuth, aiLimiter, async (req, res) => {
 app.get('/api/dashboard', requireAuth, async (req, res, next) => {
   try {
     const teams = await Team.find({ 'members.user': req.user.id }).select('_id'); const access = { $or: [{ creator: req.user.id }, { assignees: req.user.id }, { team: { $in: teams.map((team) => team._id) } }] };
-    const [tasks, bills] = await Promise.all([Task.find(access).populate('assignees', 'displayName').sort({ dueDate: 1 }), Bill.find({ user: req.user.id, status: { $ne: 'paid' } }).sort({ dueDate: 1 })]);
-    res.json({ metrics: { completed: tasks.filter((task) => task.status === 'done').length, inProgress: tasks.filter((task) => task.status === 'in-progress').length, needsAttention: tasks.filter((task) => task.status !== 'done' && task.dueDate && task.dueDate < new Date()).length, total: tasks.length }, tasks: tasks.slice(0, 6), bills: bills.slice(0, 3) });
+    const [tasks, bills, user] = await Promise.all([Task.find(access).populate('assignees', 'displayName').sort({ dueDate: 1 }), Bill.find({ user: req.user.id, status: { $ne: 'paid' } }).sort({ dueDate: 1 }), User.findById(req.user.id).select('timezone')]);
+    if (!user) return res.status(404).json({ message: 'Account not found.' });
+    const today = zonedDayNumber(new Date(), user.timezone);
+    res.json({ metrics: { completed: tasks.filter((task) => task.status === 'done').length, inProgress: tasks.filter((task) => task.status === 'in-progress').length, needsAttention: tasks.filter((task) => task.status !== 'done' && task.dueDate && storedDateDayNumber(task.dueDate) < today).length, total: tasks.length }, tasks: tasks.slice(0, 6), bills: bills.slice(0, 3) });
   } catch (error) { next(error); }
 });
 

@@ -24,6 +24,21 @@ bool emailSyntaxIsValid(String value) => RegExp(
   r'^[^\s@]+@(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$',
 ).hasMatch(value.trim());
 
+const supportedCurrencies = ['PHP', 'USD', 'EUR', 'GBP', 'JPY', 'SGD', 'AUD', 'CAD'];
+const supportedTimezones = [
+  'Asia/Manila', 'Asia/Singapore', 'Asia/Tokyo', 'Asia/Seoul', 'Asia/Hong_Kong',
+  'Asia/Dubai', 'Europe/London', 'Europe/Paris', 'America/New_York',
+  'America/Los_Angeles', 'Australia/Sydney', 'UTC',
+];
+String formatMoney(num value, String currency) {
+  final decimals = currency == 'JPY' ? 0 : 2;
+  return '$currency ${value.toStringAsFixed(decimals)}';
+}
+String formatDateOnly(dynamic value) {
+  final match = RegExp(r'^\d{4}-\d{2}-\d{2}').firstMatch(value?.toString() ?? '');
+  return match?.group(0) ?? 'No due date';
+}
+
 void main() => runApp(const KayaToApp());
 
 class PushService {
@@ -1113,8 +1128,9 @@ class _TasksTabState extends State<TasksTab> {
 }
 
 class BillsTab extends StatefulWidget {
-  const BillsTab({required this.api, super.key});
+  const BillsTab({required this.api, required this.user, super.key});
   final ApiClient api;
+  final Map<String, dynamic> user;
   @override
   State<BillsTab> createState() => _BillsTabState();
 }
@@ -1144,7 +1160,7 @@ class _BillsTabState extends State<BillsTab> {
     final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => const BillSheet(),
+      builder: (_) => BillSheet(currency: widget.user['currency'] ?? 'PHP'),
     );
     if (result == null) return;
     try {
@@ -1192,10 +1208,10 @@ class _BillsTabState extends State<BillsTab> {
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                   subtitle: Text(
-                    'Due ${DateTime.parse(bill['dueDate']).toLocal().toString().split(' ').first}',
+                    'Due ${formatDateOnly(bill['dueDate'])}',
                   ),
                   trailing: Text(
-                    '₱${(bill['amount'] as num).toStringAsFixed(2)}',
+                    formatMoney(bill['amount'] as num, widget.user['currency'] ?? 'PHP'),
                     style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
@@ -1540,7 +1556,7 @@ class MoreTab extends StatelessWidget {
               title: const Text('Bills & reminders'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () =>
-                  open(context, 'Bills & reminders', BillsTab(api: api)),
+                  open(context, 'Bills & reminders', BillsTab(api: api, user: user)),
             ),
             const Divider(height: 1),
             ListTile(
@@ -1674,6 +1690,8 @@ class SettingsTab extends StatefulWidget {
 class _SettingsTabState extends State<SettingsTab> {
   late Map<String, bool> categories;
   late bool mobilePush;
+  late String currency;
+  late String timezone;
   bool saving = false;
   String? error;
 
@@ -1689,6 +1707,24 @@ class _SettingsTabState extends State<SettingsTab> {
       'bills': preferences['bills'] ?? true,
     };
     mobilePush = channels['mobilePush'] ?? false;
+    currency = supportedCurrencies.contains(widget.user['currency']) ? widget.user['currency'] : 'PHP';
+    timezone = supportedTimezones.contains(widget.user['timezone']) ? widget.user['timezone'] : 'Asia/Manila';
+  }
+
+  Future<void> saveRegionalPreferences() async {
+    setState(() { saving = true; error = null; });
+    try {
+      final updated = Map<String, dynamic>.from(await widget.api.request('/auth/me', method: 'PATCH', body: {
+        'currency': currency,
+        'timezone': timezone,
+      }));
+      widget.user..clear()..addAll(updated);
+      if (mounted) kayaToast.success('Regional settings updated');
+    } catch (exception) {
+      if (mounted) setState(() => error = exception.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
   }
 
   Future<void> saveNotifications() async {
@@ -1754,6 +1790,40 @@ class _SettingsTabState extends State<SettingsTab> {
               onTap: widget.onLogout,
             ),
           ],
+        ),
+      ),
+      const SizedBox(height: 16),
+      Text('Regional settings', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+      const SizedBox(height: 8),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: timezone,
+                decoration: const InputDecoration(labelText: 'Timezone'),
+                items: supportedTimezones.map((value) => DropdownMenuItem(value: value, child: Text(value.replaceAll('_', ' ')))).toList(),
+                onChanged: saving ? null : (value) => setState(() => timezone = value!),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: currency,
+                decoration: const InputDecoration(labelText: 'Currency'),
+                items: supportedCurrencies.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+                onChanged: saving ? null : (value) => setState(() => currency = value!),
+              ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.icon(
+                  onPressed: saving ? null : saveRegionalPreferences,
+                  icon: const Icon(Icons.save_outlined),
+                  label: const Text('Save regional settings'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
       const SizedBox(height: 16),
@@ -1861,7 +1931,8 @@ class _TaskSheetState extends State<TaskSheet> {
 }
 
 class BillSheet extends StatefulWidget {
-  const BillSheet({super.key});
+  const BillSheet({required this.currency, super.key});
+  final String currency;
   @override
   State<BillSheet> createState() => _BillSheetState();
 }
@@ -1887,7 +1958,7 @@ class _BillSheetState extends State<BillSheet> {
           TextFormField(
             controller: amount,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Amount'),
+            decoration: InputDecoration(labelText: 'Amount (${widget.currency})'),
             validator: (v) => double.tryParse(v ?? '') == null
                 ? 'Enter a valid amount'
                 : null,
@@ -1919,6 +1990,7 @@ class _BillSheetState extends State<BillSheet> {
                 Navigator.pop(context, {
                   'name': name.text,
                   'amount': double.parse(amount.text),
+                  'currency': widget.currency,
                   'dueDate': due.text,
                   'category': 'Other',
                 });

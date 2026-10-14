@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { api, errorMessage, formatDateInput } from '../lib/api';
+import { calendarDayDifference, formatCalendarDate, formatDateTime } from '../lib/formatters';
 
 const columns = [
   ['todo', 'To do'],
@@ -66,58 +67,29 @@ function extractTask(response) {
 }
 
 function dueLabel(value) {
-  if (!value) return 'No due date';
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return 'No due date';
-  }
-
-  return new Intl.DateTimeFormat('en-PH', {
+  return formatCalendarDate(value, {
     month: 'short',
     day: 'numeric',
-  }).format(date);
+  }) || 'No due date';
 }
 
 function fullDateLabel(value) {
-  if (!value) return 'Not set';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Not set';
-  return new Intl.DateTimeFormat('en-PH', {
+  return formatCalendarDate(value, {
     dateStyle: 'medium',
-  }).format(date);
+  }) || 'Not set';
 }
 
-function dateTimeLabel(value) {
-  if (!value) return 'Not available';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Not available';
-  return new Intl.DateTimeFormat('en-PH', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date);
+function dateTimeLabel(value, timeZone) {
+  return formatDateTime(value, timeZone) || 'Not available';
 }
 
-function getDeadlineStatus(task) {
+function getDeadlineStatus(task, timeZone) {
   if (!task.dueDate || task.status === 'done') {
     return null;
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const dueDate = new Date(task.dueDate);
-  dueDate.setHours(0, 0, 0, 0);
-
-  if (Number.isNaN(dueDate.getTime())) {
-    return null;
-  }
-
-  const daysLeft = Math.round(
-    (dueDate.getTime() - today.getTime()) /
-      (1000 * 60 * 60 * 24)
-  );
+  const daysLeft = calendarDayDifference(task.dueDate, timeZone);
+  if (daysLeft === null) return null;
 
   if (daysLeft < 0) {
     return {
@@ -543,7 +515,7 @@ export default function Tasks() {
                 <div className="kanban-cards">
                   
                {columnTasks.map((task) => {
-                const deadline = getDeadlineStatus(task);
+                const deadline = getDeadlineStatus(task, user?.timezone);
                 const canEditTask = task.taskType !== 'team' || editableTeamIds.has(String(task.team?._id || task.team));
                 const canDeleteTask = canEditTask && String(task.creator?._id || task.creator) === String(user?.id);
 
@@ -691,6 +663,7 @@ export default function Tasks() {
         <TaskDetails
           task={selectedTask}
           loading={detailsLoading}
+          timeZone={user?.timezone}
           canEdit={selectedTask.taskType !== 'team' || editableTeamIds.has(String(selectedTask.team?._id || selectedTask.team))}
           team={teams.find((item) => String(item._id) === String(selectedTask.team?._id || selectedTask.team))}
           onClose={closeTask}
@@ -762,7 +735,7 @@ function editFormFromTask(task) {
   };
 }
 
-function TaskDetails({ task, loading, canEdit, team, onClose, onSaved }) {
+function TaskDetails({ task, loading, canEdit, team, timeZone, onClose, onSaved }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(() => editFormFromTask(task));
   const [errors, setErrors] = useState({});
@@ -1044,8 +1017,8 @@ function TaskDetails({ task, loading, canEdit, team, onClose, onSaved }) {
               <div><dt>Assignees</dt><dd>{assignees.length ? assignees.map((user) => user.displayName || user.email || 'Team member').join(', ') : 'Unassigned'}</dd></div>
               <div><dt>Created by</dt><dd>{task.creator?.displayName || task.creator?.email || 'Account owner'}</dd></div>
               <div><dt>Source</dt><dd>{task.aiGenerated ? 'AI planner' : 'Created manually'}</dd></div>
-              <div><dt>Created</dt><dd>{dateTimeLabel(task.createdAt)}</dd></div>
-              <div><dt>Last updated</dt><dd>{dateTimeLabel(task.updatedAt)}</dd></div>
+              <div><dt>Created</dt><dd>{dateTimeLabel(task.createdAt, timeZone)}</dd></div>
+              <div><dt>Last updated</dt><dd>{dateTimeLabel(task.updatedAt, timeZone)}</dd></div>
             </dl>
 
             <section className="task-criteria-section task-subtasks-section">

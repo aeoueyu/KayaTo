@@ -6,6 +6,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import KayaMascot from '../components/KayaMascot';
 import { api, errorMessage } from '../lib/api';
+import { formatDateTime } from '../lib/formatters';
 
 const emptyFriends = { friends: [], incoming: [], outgoing: [] };
 const personId = (person) => String(person?._id || person?.id || '');
@@ -220,7 +221,7 @@ export default function Chat() {
         {notice && <p className="form-message page-notice" role="status">{notice}</p>}
         <div className="message-list">
           {(loading || messagesLoading) && <div className="chat-loading" role="status"><span className="loading-spinner" />{loading ? 'Loading conversations...' : 'Loading messages...'}</div>}
-          {!loading && !messagesLoading && messages.map((message) => <article className={`message ${message.senderType === 'ai' ? 'ai-message' : ''}`} key={message._id}><span className={`avatar ${message.senderType === 'ai' ? 'kaya-avatar' : 'avatar-plum'}`}>{message.senderType === 'ai' ? <KayaMascot size={28} decorative /> : initials(message.sender?.displayName || message.senderName)}</span><div className="message-body"><div className="message-meta"><b>{message.senderType === 'ai' ? 'Kaya' : message.sender?.displayName || message.senderName}</b>{message.senderType === 'ai' && <span>Assistant</span>}<small>{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></div><p>{message.content}</p></div></article>)}
+          {!loading && !messagesLoading && messages.map((message) => <article className={`message ${message.senderType === 'ai' ? 'ai-message' : ''}`} key={message._id}><span className={`avatar ${message.senderType === 'ai' ? 'kaya-avatar' : 'avatar-plum'}`}>{message.senderType === 'ai' ? <KayaMascot size={28} decorative /> : initials(message.sender?.displayName || message.senderName)}</span><div className="message-body"><div className="message-meta"><b>{message.senderType === 'ai' ? 'Kaya' : message.sender?.displayName || message.senderName}</b>{message.senderType === 'ai' && <span>Assistant</span>}<small>{formatDateTime(message.createdAt, user?.timezone, { hour: '2-digit', minute: '2-digit' })}</small></div><p>{message.content}</p></div></article>)}
           {!loading && !messagesLoading && active && !messages.length && <div className="empty-state"><MessageCircle size={28} /><h3>Start the conversation</h3><p>{active.kind === 'direct' ? `Say hello to ${activePerson?.displayName || 'your friend'}.` : 'Send an update, or mention @Kaya for task-aware guidance.'}</p></div>}
           {!loading && !messagesLoading && !active && <div className="empty-state"><Users size={28} /><h3>Your messages will appear here</h3><p>Add a friend for private chat, or create a team conversation.</p><button className="friend-action" onClick={() => { setOpen(true); setFriendPanel(true); }}>Add a friend</button></div>}
         </div>
