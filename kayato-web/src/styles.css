@@ -276,6 +276,16 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 3px; }.profile-mini { margin-top: 10px; padding: 13px 8px 4px; display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--border); }
 .sidebar-logout { width: 100%; color: var(--danger); }
 .app-main { width: calc(100% - 252px); margin-left: 252px; transition: width .22s ease, margin-left .22s ease; }.app-topbar { position: sticky; z-index: 15; top: 0; height: 66px; padding: 0 28px; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(15px); }.global-search { width: min(540px, 52vw); height: 38px; padding: 0 9px; display: flex; align-items: center; gap: 9px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--faint); }.global-search input { flex: 1; min-width: 0; border: 0; background: transparent; box-shadow: none; }.global-search kbd { padding: 3px 6px; border: 1px solid var(--border); border-radius: 5px; color: var(--faint); background: var(--surface-soft); font-size: 9px; }.top-actions { position: absolute; right: 28px; display: flex; gap: 9px; }.notification-dot { position: absolute; right: 8px; top: 7px; width: 6px; height: 6px; border: 1px solid var(--surface-raised); border-radius: 50%; background: var(--danger); }.mobile-brand,.mobile-nav,.mobile-avatar { display: none; }.app-content { padding: 32px; }.page-block { max-width: 1400px; margin: auto; }.page-heading { margin-bottom: 28px; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }.page-heading h1 { margin-bottom: 5px; font-size: 30px; letter-spacing: -1.3px; }.page-heading p { margin: 0; color: var(--muted); font-size: 14px; }
+.notification-menu { position: absolute; z-index: var(--z-dropdown); top: 46px; right: 0; width: min(360px,calc(100vw - 28px)); max-height: min(520px,70vh); overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-raised); box-shadow: var(--shadow-lg); }
+.notification-menu header { padding: 13px 15px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
+.notification-menu header b { font-size: 12px; }
+.notification-menu header span { color: var(--muted); font-size: 10px; }
+.notification-menu > div { max-height: 440px; overflow-y: auto; }
+.notification-menu article { padding: 12px 15px; border-bottom: 1px solid var(--border); }
+.notification-menu article.unread { background: color-mix(in srgb,var(--accent-soft) 45%,var(--surface)); }
+.notification-menu article p { margin: 0 0 5px; font-size: 10px; line-height: 1.45; }
+.notification-menu article small { color: var(--muted); font-size: 8px; }
+.notification-empty { margin: 0; padding: 24px; color: var(--muted); text-align: center; font-size: 10px; }
 .sidebar-collapsed .sidebar { width: 76px; padding-inline: 11px; }
 .sidebar-collapsed .app-main { width: calc(100% - 76px); margin-left: 76px; }
 .sidebar.collapsed .sidebar-brand-row { padding: 0; flex-direction: column; min-height: 78px; justify-content: flex-start; gap: 10px; }
@@ -305,6 +315,20 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .card-open-action:hover { border-color: var(--info); color: var(--info); }
 .card-view-only { display: block; margin-top: 8px; color: var(--muted); font-size: 9px; font-weight: 700; text-align: right; }
 .compact-select select:disabled { cursor: not-allowed; opacity: .7; }
+.team-project-summary { margin-bottom: 14px; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); }
+.team-project-summary > div:first-child { display: flex; align-items: center; gap: 11px; }
+.team-project-summary .team-icon { width: 36px; height: 36px; margin: 0; }
+.team-project-summary small { color: var(--muted); font-size: 9px; }
+.team-project-summary h2 { margin: 2px 0 0; font-size: 14px; }
+.project-progress { min-width: 260px; display: grid; grid-template-columns: minmax(120px,1fr) auto; align-items: center; gap: 5px 10px; }
+.project-progress > span { height: 7px; overflow: hidden; border-radius: 99px; background: var(--surface-soft); }
+.project-progress i { display: block; height: 100%; border-radius: inherit; background: var(--tone-teal); }
+.project-progress b { font-size: 12px; }
+.project-progress small { grid-column: 1/-1; text-align: right; }
+.team-project-filter select { min-width: 140px; max-width: 190px; }
+.kanban-column.drag-ready { outline: 1px dashed color-mix(in srgb,var(--product-red) 45%,var(--border)); outline-offset: -4px; }
+.kanban-card[draggable='true'] { cursor: grab; }
+.kanban-card.dragging { opacity: .45; transform: scale(.98); }
 .task-details-modal { width: min(760px,100%); }
 .task-details-head { align-items: flex-start; gap: 20px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
 .task-details-head > div { min-width: 0; }
@@ -328,6 +352,21 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .task-edit-form { padding-top: 20px; }
 .task-edit-form > .field-label { display: flex; flex-direction: column; margin-top: 16px; }
 .task-edit-form > .field-label:first-of-type { margin-top: 0; }
+.assignee-picker,.subtask-editor { min-width: 0; margin: 16px 0 0; padding: 14px; border: 1px solid var(--border); border-radius: 9px; }
+.assignee-picker legend,.subtask-editor legend { padding: 0 5px; font-size: 11px; font-weight: 750; }
+.assignee-picker > p { margin: 0 0 10px; color: var(--muted); font-size: 9px; }
+.assignee-picker > div { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }
+.assignee-picker label { min-width: 0; padding: 9px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-soft); cursor: pointer; }
+.assignee-picker label > span { min-width: 0; display: grid; gap: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 700; }
+.assignee-picker label small { color: var(--muted); font-size: 8px; text-transform: capitalize; }
+.subtask-editor > div { display: grid; gap: 7px; margin-bottom: 10px; }
+.subtask-edit-row { display: grid; grid-template-columns: 20px minmax(0,1fr) 34px; align-items: center; gap: 8px; }
+.subtask-edit-row > input[type='checkbox'] { width: 17px; height: 17px; }
+.task-subtasks-section h3 { display: flex; align-items: center; justify-content: space-between; }
+.task-subtasks-section h3 small { color: var(--muted); font-size: 9px; }
+.subtask-checklist { display: grid; gap: 7px; }
+.subtask-checklist label { display: flex; align-items: flex-start; gap: 9px; font-size: 11px; line-height: 1.45; }
+.subtask-checklist input:checked + span { color: var(--muted); text-decoration: line-through; }
 .progress-edit-row { display: grid; grid-template-columns: minmax(0,1fr) 78px; align-items: center; gap: 12px; }
 .progress-edit-row input[type='range'] { padding: 0; box-shadow: none; accent-color: var(--accent); }
 .progress-edit-row .progress-number { width: 78px; }
@@ -736,6 +775,9 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
   .modal-head > button { width: 44px; height: 44px; }
   .type-select button { min-height: 68px; }
   .task-detail-grid { grid-template-columns: 1fr; }
+  .team-project-summary { align-items: stretch; flex-direction: column; }
+  .project-progress { min-width: 0; }
+  .assignee-picker > div { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 390px) {

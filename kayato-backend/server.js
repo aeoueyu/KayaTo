@@ -100,6 +100,10 @@ const teamSchema = new mongoose.Schema({
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   members: [memberSchema],
 }, { timestamps: true });
+const subtaskSchema = new mongoose.Schema({
+  title: { type: String, required: true, trim: true, maxlength: 300 },
+  completed: { type: Boolean, default: false },
+});
 const taskSchema = new mongoose.Schema({
   title: { type: String, required: true, trim: true, maxlength: 180 },
   description: { type: String, trim: true, maxlength: 5000 },
@@ -114,6 +118,7 @@ const taskSchema = new mongoose.Schema({
   dueDate: Date,
   aiGenerated: { type: Boolean, default: false },
   completionCriteria: [String],
+  subtasks: { type: [subtaskSchema], default: [] },
 }, { timestamps: true });
 const billSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -156,6 +161,21 @@ const signupOtpSchema = new mongoose.Schema({
   lastSentAt: { type: Date, required: true },
   attempts: { type: Number, default: 0 },
 }, { timestamps: true });
+const activitySchema = new mongoose.Schema({
+  team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', default: null, index: true },
+  task: { type: mongoose.Schema.Types.ObjectId, ref: 'Task', default: null, index: true },
+  actor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  action: { type: String, required: true, enum: ['created', 'edited', 'assigned', 'moved', 'progress', 'deleted'] },
+  details: { type: String, trim: true, maxlength: 500 },
+}, { timestamps: true });
+const notificationSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', default: null },
+  task: { type: mongoose.Schema.Types.ObjectId, ref: 'Task', default: null },
+  type: { type: String, required: true, default: 'task' },
+  message: { type: String, required: true, trim: true, maxlength: 500 },
+  read: { type: Boolean, default: false, index: true },
+}, { timestamps: true });
 const User = mongoose.model('User', userSchema);
 const Team = mongoose.model('Team', teamSchema);
 const Task = mongoose.model('Task', taskSchema);
@@ -164,6 +184,8 @@ const Conversation = mongoose.model('Conversation', conversationSchema);
 const Message = mongoose.model('Message', messageSchema);
 const Friendship = mongoose.model('Friendship', friendshipSchema);
 const SignupOtp = mongoose.model('SignupOtp', signupOtpSchema);
+const Activity = mongoose.model('Activity', activitySchema);
+const Notification = mongoose.model('Notification', notificationSchema);
 
 const publicUser = (user) => ({ id: String(user._id), firstName: user.firstName, lastName: user.lastName, displayName: user.displayName, username: user.username || '', email: user.email, timezone: user.timezone, currency: user.currency, primaryUsage: user.primaryUsage, onboardingCompleted: user.onboardingCompleted, notificationPreferences: user.notificationPreferences });
 const signToken = (user) => jwt.sign({ id: user._id, email: user.email }, jwtSecret, { expiresIn: jwtExpiresIn });
@@ -236,6 +258,31 @@ const populatedTeam = (team) => team.populate([
   { path: 'owner', select: 'displayName email' },
   { path: 'members.user', select: 'displayName email' },
 ]);
+const populatedTask = (task) => task.populate([
+  { path: 'creator', select: 'displayName email' },
+  { path: 'team', select: 'name' },
+  { path: 'assignees', select: 'displayName email' },
+]);
+const taskUserIds = (task, extras = []) => [...new Set([
+  task.creator?._id || task.creator,
+  ...(task.assignees || []).map((user) => user?._id || user),
+  ...extras,
+].filter(Boolean).map(String))];
+async function recordTaskEvent({ task, actor, action, details, recipients = [] }) {
+  const taskId = task._id;
+  const teamId = task.team?._id || task.team || null;
+  await Activity.create({ team: teamId, task: taskId, actor, action, details });
+  const recipientIds = taskUserIds(task, recipients).filter((id) => id !== String(actor));
+  if (recipientIds.length) {
+    await Notification.insertMany(recipientIds.map((user) => ({
+      user, team: teamId, task: taskId, type: `task-${action}`, message: details,
+    })));
+  }
+}
+function teamContainsUsers(team, userIds) {
+  const memberIds = new Set(team.members.map((member) => String(member.user?._id || member.user)));
+  return userIds.every((id) => memberIds.has(String(id)));
+}
 const friendshipPairKey = (left, right) => [String(left), String(right)].sort().join(':');
 const directConversationKey = (left, right) => `direct:${friendshipPairKey(left, right)}`;
 async function canAccessConversation(conversation, userId) {
@@ -249,6 +296,12 @@ const passwordIsStrong = (password) => password.length >= 8 && password.length <
 const safeEqual = (left, right) => { const a = Buffer.from(left); const b = Buffer.from(right); return a.length === b.length && timingSafeEqual(a, b); };
 const taskStatuses = new Set(['todo', 'in-progress', 'review', 'done']);
 const taskPriorities = new Set(['low', 'medium', 'high', 'urgent']);
+const taskTransitions = {
+  todo: new Set(['in-progress']),
+  'in-progress': new Set(['todo', 'review']),
+  review: new Set(['in-progress', 'done']),
+  done: new Set(['review']),
+};
 function validateTaskPayload(payload, { requireTitle = false } = {}) {
   if (requireTitle || payload.title !== undefined) {
     if (typeof payload.title !== 'string' || !payload.title.trim()) return 'Task title is required.';
@@ -280,6 +333,19 @@ function validateTaskPayload(payload, { requireTitle = false } = {}) {
     if (!Array.isArray(payload.completionCriteria) || payload.completionCriteria.length > 20) return 'Add no more than 20 completion criteria.';
     payload.completionCriteria = payload.completionCriteria.map((item) => String(item).trim()).filter(Boolean);
     if (payload.completionCriteria.some((item) => item.length > 300)) return 'Each completion criterion must be 300 characters or fewer.';
+  }
+  if (payload.subtasks !== undefined) {
+    if (!Array.isArray(payload.subtasks) || payload.subtasks.length > 50) return 'Add no more than 50 subtasks.';
+    payload.subtasks = payload.subtasks.map((item) => ({
+      ...(mongoose.isValidObjectId(item?._id) ? { _id: item._id } : {}),
+      title: String(item?.title || '').trim(),
+      completed: Boolean(item?.completed),
+    })).filter((item) => item.title);
+    if (payload.subtasks.some((item) => item.title.length > 300)) return 'Each subtask must be 300 characters or fewer.';
+  }
+  if (payload.assignees !== undefined) {
+    if (!Array.isArray(payload.assignees) || payload.assignees.length > 50 || payload.assignees.some((id) => !mongoose.isValidObjectId(id))) return 'Select valid task assignees.';
+    payload.assignees = [...new Set(payload.assignees.map(String))];
   }
   return '';
 }
@@ -499,32 +565,65 @@ app.get('/api/tasks/:id', requireAuth, async (req, res, next) => {
 });
 app.post('/api/tasks', requireAuth, async (req, res, next) => {
   try {
-    const payload = cleanUpdate(req.body, ['title', 'description', 'project', 'taskType', 'team', 'assignees', 'status', 'priority', 'progress', 'dueDate', 'aiGenerated', 'completionCriteria']);
+    const payload = cleanUpdate(req.body, ['title', 'description', 'project', 'taskType', 'team', 'assignees', 'status', 'priority', 'progress', 'dueDate', 'aiGenerated', 'completionCriteria', 'subtasks']);
     const validationError = validateTaskPayload(payload, { requireTitle: true });
     if (validationError) return res.status(400).json({ message: validationError });
-    if (payload.taskType === 'team' && !(await getEditableTeam(payload.team, req.user.id))) return res.status(403).json({ message: 'You need edit access to create tasks for this team.' });
-    const task = await Task.create({ ...payload, creator: req.user.id, assignees: payload.assignees?.length ? payload.assignees : [req.user.id] });
-    await task.populate('creator', 'displayName email');
-    await task.populate('team', 'name');
-    res.status(201).json(await task.populate('assignees', 'displayName email'));
+    const assignees = payload.assignees?.length ? payload.assignees : [req.user.id];
+    if (payload.taskType === 'team') {
+      const team = await getEditableTeam(payload.team, req.user.id);
+      if (!team) return res.status(403).json({ message: 'You need edit access to create tasks for this team.' });
+      if (!teamContainsUsers(team, assignees)) return res.status(400).json({ message: 'Every assignee must belong to the selected team.' });
+    } else if (assignees.some((id) => String(id) !== req.user.id)) {
+      return res.status(400).json({ message: 'Personal tasks can only be assigned to you.' });
+    }
+    if (payload.subtasks?.length) payload.progress = Math.round((payload.subtasks.filter((item) => item.completed).length / payload.subtasks.length) * 100);
+    if (payload.status === 'done') {
+      payload.progress = 100;
+      payload.subtasks?.forEach((subtask) => { subtask.completed = true; });
+    }
+    const task = await Task.create({ ...payload, creator: req.user.id, assignees });
+    await recordTaskEvent({ task, actor: req.user.id, action: 'created', details: `Task “${task.title}” was created.`, recipients: assignees });
+    res.status(201).json(await populatedTask(task));
   } catch (error) { next(error); }
 });
 app.patch('/api/tasks/:id', requireAuth, async (req, res, next) => {
   try {
     const task = await Task.findById(req.params.id); if (!task) return res.status(404).json({ message: 'Task not found.' });
+    const editableTeam = task.team ? await getEditableTeam(task.team, req.user.id) : null;
     const canEdit = task.team
-      ? Boolean(await getEditableTeam(task.team, req.user.id))
+      ? Boolean(editableTeam)
       : String(task.creator) === req.user.id || task.assignees.some((id) => String(id) === req.user.id);
     if (!canEdit) return res.status(403).json({ message: 'You do not have permission to update this task.' });
-    const payload = cleanUpdate(req.body, ['title', 'description', 'project', 'assignees', 'status', 'priority', 'progress', 'dueDate', 'completionCriteria']);
+    const payload = cleanUpdate(req.body, ['title', 'description', 'project', 'assignees', 'status', 'priority', 'progress', 'dueDate', 'completionCriteria', 'subtasks']);
     const validationError = validateTaskPayload(payload);
     if (validationError) return res.status(400).json({ message: validationError });
+    if (payload.assignees && task.team && !teamContainsUsers(editableTeam, payload.assignees)) return res.status(400).json({ message: 'Every assignee must belong to this team.' });
+    if (payload.assignees && !task.team && payload.assignees.some((id) => String(id) !== req.user.id)) return res.status(400).json({ message: 'Personal tasks can only be assigned to you.' });
+    if (payload.status && payload.status !== task.status && !taskTransitions[task.status]?.has(payload.status)) return res.status(400).json({ message: `Move this task from ${task.status} to an adjacent workflow stage first.` });
+    const previousAssignees = task.assignees.map(String);
+    const previousStatus = task.status;
+    const previousProgress = task.progress;
+    if (payload.subtasks?.length) payload.progress = Math.round((payload.subtasks.filter((item) => item.completed).length / payload.subtasks.length) * 100);
     Object.assign(task, payload);
-    if (task.status === 'done') task.progress = 100;
+    if (task.status === 'done') {
+      task.progress = 100;
+      task.subtasks.forEach((subtask) => { subtask.completed = true; });
+    }
     await task.save();
-    await task.populate('creator', 'displayName email');
-    await task.populate('team', 'name');
-    res.json(await task.populate('assignees', 'displayName email'));
+    const assigneeIds = task.assignees.map(String);
+    const assignmentChanged = payload.assignees && (previousAssignees.length !== assigneeIds.length || previousAssignees.some((id) => !assigneeIds.includes(id)));
+    const statusChanged = previousStatus !== task.status;
+    const progressChanged = previousProgress !== task.progress || payload.subtasks !== undefined;
+    const action = assignmentChanged ? 'assigned' : statusChanged ? 'moved' : progressChanged ? 'progress' : 'edited';
+    const details = assignmentChanged
+      ? `Assignments for “${task.title}” were updated.`
+      : statusChanged
+        ? `“${task.title}” moved to ${task.status}.`
+        : progressChanged
+          ? `“${task.title}” progress is now ${task.progress}%.`
+          : `Task “${task.title}” was updated.`;
+    await recordTaskEvent({ task, actor: req.user.id, action, details, recipients: [...previousAssignees, ...assigneeIds] });
+    res.json(await populatedTask(task));
   } catch (error) { next(error); }
 });
 app.delete('/api/tasks/:id', requireAuth, async (req, res, next) => {
@@ -532,10 +631,29 @@ app.delete('/api/tasks/:id', requireAuth, async (req, res, next) => {
     const task = await Task.findOne({ _id: req.params.id, creator: req.user.id });
     if (!task) return res.status(404).json({ message: 'Task not found or you are not its creator.' });
     if (task.team && !(await getEditableTeam(task.team, req.user.id))) return res.status(403).json({ message: 'You only have view access to this team.' });
+    await recordTaskEvent({ task, actor: req.user.id, action: 'deleted', details: `Task “${task.title}” was deleted.`, recipients: task.assignees });
     await task.deleteOne();
     res.status(204).end();
   }
   catch (error) { next(error); }
+});
+
+app.get('/api/teams/:id/activity', requireAuth, async (req, res, next) => {
+  try {
+    if (!(await getAuthorizedTeam(req.params.id, req.user.id))) return res.status(403).json({ message: 'You do not have access to this team activity.' });
+    res.json(await Activity.find({ team: req.params.id }).populate('actor', 'displayName').sort({ createdAt: -1 }).limit(100));
+  } catch (error) { next(error); }
+});
+app.get('/api/notifications', requireAuth, async (req, res, next) => {
+  try {
+    res.json(await Notification.find({ user: req.user.id }).populate('team', 'name').sort({ createdAt: -1 }).limit(50));
+  } catch (error) { next(error); }
+});
+app.patch('/api/notifications/read', requireAuth, async (req, res, next) => {
+  try {
+    await Notification.updateMany({ user: req.user.id, read: false }, { $set: { read: true } });
+    res.json({ message: 'Notifications marked as read.' });
+  } catch (error) { next(error); }
 });
 
 app.get('/api/bills', requireAuth, async (req, res, next) => { try { res.json(await Bill.find({ user: req.user.id }).sort({ dueDate: 1 })); } catch (error) { next(error); } });

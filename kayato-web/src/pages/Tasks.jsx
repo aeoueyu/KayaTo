@@ -10,6 +10,12 @@ const columns = [
   ['review', 'For review'],
   ['done', 'Completed'],
 ];
+const statusTransitions = {
+  todo: ['todo', 'in-progress'],
+  'in-progress': ['todo', 'in-progress', 'review'],
+  review: ['in-progress', 'review', 'done'],
+  done: ['review', 'done'],
+};
 
 const emptyForm = {
   title: '',
@@ -20,6 +26,8 @@ const emptyForm = {
   status: 'todo',
   priority: 'medium',
   dueDate: '',
+  assignees: [],
+  subtasks: '',
 };
 
 // Supports array and paginated API responses.
@@ -140,6 +148,7 @@ export default function Tasks() {
   const [items, setItems] = useState([]);
   const [teams, setTeams] = useState([]);
   const [scope, setScope] = useState('all');
+  const [teamFilter, setTeamFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -148,6 +157,8 @@ export default function Tasks() {
   const [pendingDelete, setPendingDelete] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [createStatus, setCreateStatus] = useState('todo');
+  const [draggingTaskId, setDraggingTaskId] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -194,14 +205,19 @@ export default function Tasks() {
       const matchesTitle = (task.title || '')
         .toLowerCase()
         .includes(normalizedQuery);
+      const taskTeamId = String(task.team?._id || task.team || '');
+      const matchesTeam = teamFilter === 'all'
+        || (teamFilter === 'personal' && task.taskType === 'personal')
+        || taskTeamId === teamFilter;
 
       return (
         matchesScope &&
         matchesStatus &&
+        matchesTeam &&
         matchesTitle
       );
     });
-  }, [items, scope, statusFilter, query]);
+  }, [items, scope, statusFilter, teamFilter, query]);
 
   const editableTeamIds = useMemo(() => new Set(
     teams
@@ -217,10 +233,18 @@ export default function Tasks() {
   const clearFilters = () => {
     setScope('all');
     setStatusFilter('all');
+    setTeamFilter('all');
     setQuery('');
   };
 
+  const selectedTeam = teams.find((team) => String(team._id) === teamFilter);
+  const selectedTeamTasks = items.filter((task) => String(task.team?._id || task.team) === teamFilter);
+  const projectProgress = selectedTeamTasks.length
+    ? Math.round(selectedTeamTasks.reduce((sum, task) => sum + (task.progress || 0), 0) / selectedTeamTasks.length)
+    : 0;
+
   const updateStatus = async (task, status) => {
+    if (task.status === status) return;
     setError('');
 
     try {
@@ -251,6 +275,14 @@ export default function Tasks() {
     } catch (requestError) {
       setError(errorMessage(requestError));
     }
+  };
+
+  const dropTask = async (event, status) => {
+    event.preventDefault();
+    const taskId = event.dataTransfer.getData('text/task-id') || draggingTaskId;
+    setDraggingTaskId('');
+    const task = items.find((item) => item._id === taskId);
+    if (task) await updateStatus(task, status);
   };
 
   const openTask = async (task) => {
@@ -312,7 +344,7 @@ export default function Tasks() {
 
         <button
           className="button button-primary"
-          onClick={() => setShowCreate(true)}
+          onClick={() => { setCreateStatus('todo'); setShowCreate(true); }}
         >
           <Plus size={17} />
           Create task
@@ -328,6 +360,13 @@ export default function Tasks() {
         </p>
       )}
 
+      {selectedTeam && (
+        <section className="team-project-summary" aria-label={`${selectedTeam.name} project progress`}>
+          <div><span className="team-icon"><Users size={18} /></span><div><small>Team project</small><h2>{selectedTeam.name}</h2></div></div>
+          <div className="project-progress"><span><i style={{ width: `${projectProgress}%` }} /></span><b>{projectProgress}%</b><small>{selectedTeamTasks.length} task{selectedTeamTasks.length === 1 ? '' : 's'}</small></div>
+        </section>
+      )}
+
       <div className="task-toolbar">
         <div className="segmented">
           {['all', 'personal', 'team'].map((item) => (
@@ -336,7 +375,12 @@ export default function Tasks() {
               className={
                 scope === item ? 'active' : ''
               }
-              onClick={() => setScope(item)}
+              onClick={() => {
+                setScope(item);
+                if (item === 'all') setTeamFilter('all');
+                else if (item === 'personal') setTeamFilter('personal');
+                else if (teamFilter === 'personal') setTeamFilter('all');
+              }}
             >
               {item[0].toUpperCase() + item.slice(1)}
             </button>
@@ -344,6 +388,14 @@ export default function Tasks() {
         </div>
 
         <div className="toolbar-actions">
+          <label className="task-status-filter team-project-filter">
+            <span>Project</span>
+            <select value={teamFilter} onChange={(event) => { const value = event.target.value; setTeamFilter(value); setScope(value === 'personal' ? 'personal' : value === 'all' ? 'all' : 'team'); }}>
+              <option value="all">All work</option>
+              <option value="personal">Personal</option>
+              {teams.map((team) => <option key={team._id} value={team._id}>{team.name}</option>)}
+            </select>
+          </label>
           <label className="table-search">
             <Search size={16} />
 
@@ -429,8 +481,10 @@ export default function Tasks() {
 
             return (
               <section
-                className="kanban-column"
+                className={`kanban-column${draggingTaskId ? ' drag-ready' : ''}`}
                 key={id}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => dropTask(event, id)}
               >
                 <div className="kanban-heading">
                   <div>
@@ -445,9 +499,7 @@ export default function Tasks() {
 
                   <button
                     aria-label={`Add to ${label}`}
-                    onClick={() =>
-                      setShowCreate(true)
-                    }
+                    onClick={() => { setCreateStatus(id); setShowCreate(true); }}
                   >
                     <Plus size={16} />
                   </button>
@@ -462,8 +514,11 @@ export default function Tasks() {
 
                 return (
                 <article
-                className="kanban-card"
+                className={`kanban-card${draggingTaskId === task._id ? ' dragging' : ''}`}
                 key={task._id}
+                draggable={canEditTask}
+                onDragStart={(event) => { event.dataTransfer.setData('text/task-id', task._id); event.dataTransfer.effectAllowed = 'move'; setDraggingTaskId(task._id); }}
+                onDragEnd={() => setDraggingTaskId('')}
                 >
 
                       <div className="card-top">
@@ -538,7 +593,7 @@ export default function Tasks() {
                             )
                           }
                         >
-                          {columns.map(
+                          {columns.filter(([value]) => statusTransitions[task.status]?.includes(value)).map(
                             ([value, text]) => (
                               <option
                                 value={value}
@@ -584,6 +639,9 @@ export default function Tasks() {
       {showCreate && (
         <CreateTask
           teams={teams.filter((team) => editableTeamIds.has(String(team._id)))}
+          initialTeam={selectedTeam?._id || ''}
+          initialStatus={createStatus}
+          currentUserId={user?.id}
           onClose={() =>
             setShowCreate(false)
           }
@@ -599,6 +657,7 @@ export default function Tasks() {
           task={selectedTask}
           loading={detailsLoading}
           canEdit={selectedTask.taskType !== 'team' || editableTeamIds.has(String(selectedTask.team?._id || selectedTask.team))}
+          team={teams.find((item) => String(item._id) === String(selectedTask.team?._id || selectedTask.team))}
           onClose={() => setSelectedTask(null)}
           onSaved={saveTask}
         />
@@ -663,10 +722,12 @@ function editFormFromTask(task) {
     completionCriteria: Array.isArray(task.completionCriteria)
       ? task.completionCriteria.join('\n')
       : '',
+    assignees: Array.isArray(task.assignees) ? task.assignees.map((user) => String(user?._id || user)) : [],
+    subtasks: Array.isArray(task.subtasks) ? task.subtasks.map((item) => ({ _id: item._id, title: item.title || '', completed: Boolean(item.completed) })) : [],
   };
 }
 
-function TaskDetails({ task, loading, canEdit, onClose, onSaved }) {
+function TaskDetails({ task, loading, canEdit, team, onClose, onSaved }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(() => editFormFromTask(task));
   const [errors, setErrors] = useState({});
@@ -710,6 +771,7 @@ function TaskDetails({ task, loading, canEdit, onClose, onSaved }) {
       .split('\n')
       .map((item) => item.trim())
       .filter(Boolean);
+    const subtasks = form.subtasks.map((item) => ({ ...item, title: item.title.trim() })).filter((item) => item.title);
 
     if (!title) nextErrors.title = 'Enter a task title.';
     else if (title.length > 180) nextErrors.title = 'Use 180 characters or fewer.';
@@ -718,6 +780,8 @@ function TaskDetails({ task, loading, canEdit, onClose, onSaved }) {
     if (!Number.isFinite(progress) || progress < 0 || progress > 100) nextErrors.progress = 'Enter a value from 0 to 100.';
     if (criteria.length > 20) nextErrors.completionCriteria = 'Add no more than 20 criteria.';
     else if (criteria.some((item) => item.length > 300)) nextErrors.completionCriteria = 'Keep each criterion to 300 characters or fewer.';
+    if (subtasks.length > 50) nextErrors.subtasks = 'Add no more than 50 subtasks.';
+    else if (subtasks.some((item) => item.title.length > 300)) nextErrors.subtasks = 'Keep each subtask to 300 characters or fewer.';
 
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
@@ -738,6 +802,8 @@ function TaskDetails({ task, loading, canEdit, onClose, onSaved }) {
         progress: form.status === 'done' ? 100 : progress,
         dueDate: form.dueDate || null,
         completionCriteria: criteria,
+        assignees: task.taskType === 'team' ? form.assignees : undefined,
+        subtasks,
       });
       const updatedTask = extractTask(response.data);
       onSaved(updatedTask);
@@ -750,10 +816,30 @@ function TaskDetails({ task, loading, canEdit, onClose, onSaved }) {
     }
   };
 
+  const toggleSubtask = async (subtaskId) => {
+    if (!canEdit || busy) return;
+    const subtasks = (task.subtasks || []).map((item) => ({
+      _id: item._id,
+      title: item.title,
+      completed: String(item._id) === String(subtaskId) ? !item.completed : item.completed,
+    }));
+    setBusy(true); setRequestError(''); setMessage('');
+    try {
+      const response = await api.patch(`/tasks/${task._id}`, { subtasks });
+      onSaved(extractTask(response.data));
+      setMessage('Subtask and progress updated.');
+    } catch (error) {
+      setRequestError(errorMessage(error, 'Unable to update the subtask.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const statusLabel = columns.find(([value]) => value === task.status)?.[1] || task.status;
   const teamName = typeof task.team === 'object' ? task.team?.name : '';
   const assignees = Array.isArray(task.assignees) ? task.assignees : [];
   const criteria = Array.isArray(task.completionCriteria) ? task.completionCriteria : [];
+  const subtasks = Array.isArray(task.subtasks) ? task.subtasks : [];
 
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
@@ -809,11 +895,23 @@ function TaskDetails({ task, loading, canEdit, onClose, onSaved }) {
               </label>
             </div>
 
+            {task.taskType === 'team' && team && (
+              <fieldset className="assignee-picker">
+                <legend>Assignees</legend>
+                <p>Assignments are limited to members of {team.name}.</p>
+                <div>{team.members?.map((member) => {
+                  const id = String(member.user?._id || member.user);
+                  const checked = form.assignees.includes(id);
+                  return <label key={id}><input type="checkbox" checked={checked} onChange={(event) => change('assignees', event.target.checked ? [...form.assignees, id] : form.assignees.filter((item) => item !== id))} /><span>{member.user?.displayName || member.user?.email || 'Team member'}<small>{member.role}</small></span></label>;
+                })}</div>
+              </fieldset>
+            )}
+
             <div className="form-grid">
               <label className="field-label">
                 Status
                 <select value={form.status} onChange={(event) => change('status', event.target.value)}>
-                  {columns.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  {columns.filter(([value]) => statusTransitions[task.status]?.includes(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select>
               </label>
               <label className="field-label">
@@ -863,6 +961,19 @@ function TaskDetails({ task, loading, canEdit, onClose, onSaved }) {
               {errors.description && <small className="field-error">{errors.description}</small>}
             </label>
 
+            <fieldset className="subtask-editor">
+              <legend>Subtasks</legend>
+              <div>{form.subtasks.map((subtask, index) => (
+                <div className="subtask-edit-row" key={subtask._id || index}>
+                  <input type="checkbox" checked={subtask.completed} onChange={(event) => change('subtasks', form.subtasks.map((item, itemIndex) => itemIndex === index ? { ...item, completed: event.target.checked } : item))} aria-label={`Mark ${subtask.title || `subtask ${index + 1}`} complete`} />
+                  <input value={subtask.title} maxLength="300" onChange={(event) => change('subtasks', form.subtasks.map((item, itemIndex) => itemIndex === index ? { ...item, title: event.target.value } : item))} placeholder={`Subtask ${index + 1}`} />
+                  <button type="button" className="icon-button" onClick={() => change('subtasks', form.subtasks.filter((_, itemIndex) => itemIndex !== index))} aria-label="Remove subtask"><Trash2 size={15} /></button>
+                </div>
+              ))}</div>
+              <button type="button" className="button button-secondary button-small" onClick={() => change('subtasks', [...form.subtasks, { title: '', completed: false }])}><Plus size={14} />Add subtask</button>
+              {errors.subtasks && <small className="field-error">{errors.subtasks}</small>}
+            </fieldset>
+
             <label className="field-label">
               Completion criteria
               <textarea
@@ -884,6 +995,7 @@ function TaskDetails({ task, loading, canEdit, onClose, onSaved }) {
           </form>
         ) : (
           <div className="task-details-content">
+            {requestError && <p className="form-error" role="alert">{requestError}</p>}
             {message && <p className="form-success" role="status">{message}</p>}
             <p className="task-detail-description">{task.description || 'No description provided.'}</p>
 
@@ -900,6 +1012,13 @@ function TaskDetails({ task, loading, canEdit, onClose, onSaved }) {
               <div><dt>Created</dt><dd>{dateTimeLabel(task.createdAt)}</dd></div>
               <div><dt>Last updated</dt><dd>{dateTimeLabel(task.updatedAt)}</dd></div>
             </dl>
+
+            <section className="task-criteria-section task-subtasks-section">
+              <h3>Subtasks <small>{subtasks.filter((item) => item.completed).length}/{subtasks.length}</small></h3>
+              {subtasks.length
+                ? <div className="subtask-checklist">{subtasks.map((item) => <label key={item._id}><input type="checkbox" checked={item.completed} disabled={!canEdit || busy} onChange={() => toggleSubtask(item._id)} /><span>{item.title}</span></label>)}</div>
+                : <p>No subtasks added.</p>}
+            </section>
 
             <section className="task-criteria-section">
               <h3>Completion criteria</h3>
@@ -921,15 +1040,23 @@ function TaskDetails({ task, loading, canEdit, onClose, onSaved }) {
 
 function CreateTask({
   teams,
+  initialTeam,
+  initialStatus,
+  currentUserId,
   onClose,
   onCreated,
 }) {
   const [form, setForm] = useState({
     ...emptyForm,
+    taskType: initialTeam ? 'team' : 'personal',
+    team: initialTeam,
+    status: initialStatus || 'todo',
+    assignees: initialTeam && currentUserId ? [String(currentUserId)] : [],
   });
 
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const selectedTeam = teams.find((team) => String(team._id || team.id) === String(form.team));
 
   const submit = async (event) => {
     event.preventDefault();
@@ -955,6 +1082,7 @@ function CreateTask({
         taskType: form.taskType,
         status: form.status,
         priority: form.priority,
+        subtasks: form.subtasks.split('\n').map((title) => title.trim()).filter(Boolean).map((title) => ({ title, completed: false })),
       };
 
       if (form.dueDate) {
@@ -963,6 +1091,7 @@ function CreateTask({
 
       if (form.taskType === 'team') {
         payload.team = form.team;
+        payload.assignees = form.assignees;
       }
 
       await api.post('/tasks', payload);
@@ -1039,6 +1168,7 @@ function CreateTask({
                   ...form,
                   taskType: e.target.value,
                   team: '',
+                  assignees: [],
                 })
               }
             >
@@ -1093,6 +1223,7 @@ function CreateTask({
                 setForm({
                   ...form,
                   team: e.target.value,
+                  assignees: currentUserId ? [String(currentUserId)] : [],
                 })
               }
               required
@@ -1119,6 +1250,18 @@ function CreateTask({
               </small>
             )}
           </label>
+        )}
+
+        {form.taskType === 'team' && selectedTeam && (
+          <fieldset className="assignee-picker">
+            <legend>Assignees</legend>
+            <p>Select one or more members. They will receive a notification.</p>
+            <div>{selectedTeam.members?.map((member) => {
+              const id = String(member.user?._id || member.user);
+              const checked = form.assignees.includes(id);
+              return <label key={id}><input type="checkbox" checked={checked} onChange={(event) => setForm({ ...form, assignees: event.target.checked ? [...form.assignees, id] : form.assignees.filter((item) => item !== id) })} /><span>{member.user?.displayName || member.user?.email || 'Team member'}<small>{member.role}</small></span></label>;
+            })}</div>
+          </fieldset>
         )}
 
         <div className="form-grid">
@@ -1155,6 +1298,13 @@ function CreateTask({
         </div>
 
         <label className="field-label">
+          Initial status
+          <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>
+            {columns.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+
+        <label className="field-label">
           Description
 
           <textarea
@@ -1167,6 +1317,12 @@ function CreateTask({
               })
             }
           />
+        </label>
+
+        <label className="field-label">
+          Subtasks
+          <textarea rows="4" value={form.subtasks} onChange={(event) => setForm({ ...form, subtasks: event.target.value })} placeholder="Add one subtask per line" />
+          <small>One subtask per line. Completing subtasks automatically updates progress.</small>
         </label>
 
         <div className="modal-actions">

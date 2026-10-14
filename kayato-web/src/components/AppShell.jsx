@@ -25,6 +25,8 @@ export default function AppShell() {
   const initials = (user?.displayName || 'KayaTo User').split(/\s+/).slice(0,2).map(part=>part[0]).join('').toUpperCase();
   const [teams, setTeams] = useState([]);
   const [teamsStatus, setTeamsStatus] = useState('loading');
+  const [notifications, setNotifications] = useState([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     try { return window.localStorage.getItem('kayato-sidebar') === 'collapsed'; }
     catch { return false; }
@@ -37,6 +39,27 @@ export default function AppShell() {
       .catch(() => { if (active) { setTeams([]); setTeamsStatus('error'); } });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadNotifications = () => api.get('/notifications')
+      .then(({ data }) => { if (active) setNotifications(data); })
+      .catch(() => {});
+    loadNotifications();
+    const interval = window.setInterval(loadNotifications, 30_000);
+    return () => { active = false; window.clearInterval(interval); };
+  }, []);
+
+  const openNotifications = async () => {
+    const opening = !notificationsOpen;
+    setNotificationsOpen(opening);
+    if (opening && notifications.some((item) => !item.read)) {
+      try {
+        await api.patch('/notifications/read');
+        setNotifications((current) => current.map((item) => ({ ...item, read: true })));
+      } catch { /* The list remains usable if read state cannot be saved. */ }
+    }
+  };
 
   useEffect(() => {
     if (sessionWarning) {
@@ -96,7 +119,11 @@ export default function AppShell() {
         <header className="app-topbar">
           <div className="mobile-brand"><Brand /></div>
           <div className="global-search"><Search size={18} /><input aria-label="Search" placeholder="Search tasks, people, or projects" /><kbd>Ctrl K</kbd></div>
-          <div className="top-actions"><button className="icon-button" aria-label="Notifications" title="Notifications"><Bell size={19} /></button><button type="button" className="avatar avatar-peach mobile-avatar" aria-label="Open account actions" aria-haspopup="dialog" onClick={() => logoutDialog.current?.showModal()}>{initials}</button></div>
+          <div className="top-actions">
+            <button className="icon-button" aria-label="Notifications" title="Notifications" aria-expanded={notificationsOpen} onClick={openNotifications}><Bell size={19} />{notifications.some((item) => !item.read) && <span className="notification-dot" />}</button>
+            {notificationsOpen && <section className="notification-menu" aria-label="Notifications"><header><b>Notifications</b><span>{notifications.length}</span></header><div>{notifications.length ? notifications.slice(0, 12).map((item) => <article key={item._id} className={item.read ? '' : 'unread'}><p>{item.message}</p><small>{item.team?.name || 'Personal task'} · {new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.createdAt))}</small></article>) : <p className="notification-empty">No notifications yet.</p>}</div></section>}
+            <button type="button" className="avatar avatar-peach mobile-avatar" aria-label="Open account actions" aria-haspopup="dialog" onClick={() => logoutDialog.current?.showModal()}>{initials}</button>
+          </div>
         </header>
         <div className="app-content" id="app-content" tabIndex="-1"><Outlet /></div>
       </main>
