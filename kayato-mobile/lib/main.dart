@@ -24,18 +24,39 @@ bool emailSyntaxIsValid(String value) => RegExp(
   r'^[^\s@]+@(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$',
 ).hasMatch(value.trim());
 
-const supportedCurrencies = ['PHP', 'USD', 'EUR', 'GBP', 'JPY', 'SGD', 'AUD', 'CAD'];
+const supportedCurrencies = [
+  'PHP',
+  'USD',
+  'EUR',
+  'GBP',
+  'JPY',
+  'SGD',
+  'AUD',
+  'CAD',
+];
 const supportedTimezones = [
-  'Asia/Manila', 'Asia/Singapore', 'Asia/Tokyo', 'Asia/Seoul', 'Asia/Hong_Kong',
-  'Asia/Dubai', 'Europe/London', 'Europe/Paris', 'America/New_York',
-  'America/Los_Angeles', 'Australia/Sydney', 'UTC',
+  'Asia/Manila',
+  'Asia/Singapore',
+  'Asia/Tokyo',
+  'Asia/Seoul',
+  'Asia/Hong_Kong',
+  'Asia/Dubai',
+  'Europe/London',
+  'Europe/Paris',
+  'America/New_York',
+  'America/Los_Angeles',
+  'Australia/Sydney',
+  'UTC',
 ];
 String formatMoney(num value, String currency) {
   final decimals = currency == 'JPY' ? 0 : 2;
   return '$currency ${value.toStringAsFixed(decimals)}';
 }
+
 String formatDateOnly(dynamic value) {
-  final match = RegExp(r'^\d{4}-\d{2}-\d{2}').firstMatch(value?.toString() ?? '');
+  final match = RegExp(
+    r'^\d{4}-\d{2}-\d{2}',
+  ).firstMatch(value?.toString() ?? '');
   return match?.group(0) ?? 'No due date';
 }
 
@@ -44,44 +65,89 @@ void main() => runApp(const KayaToApp());
 class PushService {
   static const apiKey = String.fromEnvironment('FIREBASE_API_KEY');
   static const appId = String.fromEnvironment('FIREBASE_APP_ID');
-  static const messagingSenderId = String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID');
+  static const messagingSenderId = String.fromEnvironment(
+    'FIREBASE_MESSAGING_SENDER_ID',
+  );
   static const projectId = String.fromEnvironment('FIREBASE_PROJECT_ID');
   static StreamSubscription<String>? _tokenRefresh;
   static StreamSubscription<RemoteMessage>? _foregroundMessages;
-  static bool get configured => apiKey.isNotEmpty && appId.isNotEmpty && messagingSenderId.isNotEmpty && projectId.isNotEmpty;
-  static String get platform => defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android';
+  static bool get configured =>
+      apiKey.isNotEmpty &&
+      appId.isNotEmpty &&
+      messagingSenderId.isNotEmpty &&
+      projectId.isNotEmpty;
+  static String get platform =>
+      defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android';
 
   static Future<bool> _initialize() async {
     if (kIsWeb || !configured) return false;
     if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp(options: const FirebaseOptions(apiKey: apiKey, appId: appId, messagingSenderId: messagingSenderId, projectId: projectId));
+      await Firebase.initializeApp(
+        options: const FirebaseOptions(
+          apiKey: apiKey,
+          appId: appId,
+          messagingSenderId: messagingSenderId,
+          projectId: projectId,
+        ),
+      );
     }
     return true;
   }
 
   static Future<void> enable(ApiClient api) async {
-    if (!await _initialize()) throw Exception('Firebase mobile push is not configured in this build.');
-    final permission = await FirebaseMessaging.instance.requestPermission(alert: true, badge: true, sound: true);
-    if (permission.authorizationStatus != AuthorizationStatus.authorized && permission.authorizationStatus != AuthorizationStatus.provisional) {
+    if (!await _initialize()) {
+      throw Exception('Firebase mobile push is not configured in this build.');
+    }
+    final permission = await FirebaseMessaging.instance.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+    if (permission.authorizationStatus != AuthorizationStatus.authorized &&
+        permission.authorizationStatus != AuthorizationStatus.provisional) {
       throw Exception('Notification permission was not granted.');
     }
     final token = await FirebaseMessaging.instance.getToken();
-    if (token == null) throw Exception('This device could not create a notification token.');
-    await api.request('/push/mobile', method: 'POST', body: {'token': token, 'platform': platform});
+    if (token == null) {
+      throw Exception('This device could not create a notification token.');
+    }
+    await api.request(
+      '/push/mobile',
+      method: 'POST',
+      body: {'token': token, 'platform': platform},
+    );
     await _tokenRefresh?.cancel();
-    _tokenRefresh = FirebaseMessaging.instance.onTokenRefresh.listen((nextToken) {
-      api.request('/push/mobile', method: 'POST', body: {'token': nextToken, 'platform': platform}).catchError((_) => null);
+    _tokenRefresh = FirebaseMessaging.instance.onTokenRefresh.listen((
+      nextToken,
+    ) {
+      api
+          .request(
+            '/push/mobile',
+            method: 'POST',
+            body: {'token': nextToken, 'platform': platform},
+          )
+          .catchError((_) => null);
     });
     await _foregroundMessages?.cancel();
     _foregroundMessages = FirebaseMessaging.onMessage.listen((message) {
-      kayaToast.success(message.notification?.title ?? 'KayaTo', description: message.notification?.body ?? 'You have a new notification.');
+      kayaToast.success(
+        message.notification?.title ?? 'KayaTo',
+        description:
+            message.notification?.body ?? 'You have a new notification.',
+      );
     });
   }
 
   static Future<void> disable(ApiClient api) async {
     if (!await _initialize()) return;
     final token = await FirebaseMessaging.instance.getToken();
-    if (token != null) await api.request('/push/mobile', method: 'DELETE', body: {'token': token});
+    if (token != null) {
+      await api.request(
+        '/push/mobile',
+        method: 'DELETE',
+        body: {'token': token},
+      );
+    }
     await FirebaseMessaging.instance.deleteToken();
     await _tokenRefresh?.cancel();
     _tokenRefresh = null;
@@ -123,29 +189,124 @@ class KayaToApp extends StatefulWidget {
   State<KayaToApp> createState() => _KayaToAppState();
 }
 
-class _KayaToAppState extends State<KayaToApp> {
+class _KayaToAppState extends State<KayaToApp> with WidgetsBindingObserver {
   final api = ApiClient();
+  final navigatorKey = GlobalKey<NavigatorState>();
   ThemeMode mode = ThemeMode.system;
   Map<String, dynamic>? user;
   bool loading = true;
+  Timer? sessionTimer;
+  DateTime lastActivity = DateTime.now();
+  DateTime lastPersistedActivity = DateTime.fromMillisecondsSinceEpoch(0);
+  bool warningVisible = false;
+  static const sessionLength = Duration(minutes: 30);
+  static const warningLength = Duration(minutes: 1);
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _restore();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    sessionTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _checkSession();
+  }
+
+  Future<void> _recordActivity() async {
+    if (user == null) return;
+    lastActivity = DateTime.now();
+    warningVisible = false;
+    if (lastActivity.difference(lastPersistedActivity) <
+        const Duration(seconds: 5)) {
+      return;
+    }
+    lastPersistedActivity = lastActivity;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('last_activity', lastActivity.millisecondsSinceEpoch);
+  }
+
+  void _startSessionTimer() {
+    sessionTimer?.cancel();
+    sessionTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _checkSession(),
+    );
+  }
+
+  Future<void> _checkSession() async {
+    if (user == null) return;
+    final idle = DateTime.now().difference(lastActivity);
+    if (idle >= sessionLength) {
+      warningVisible = false;
+      await logout(sessionExpired: true);
+      return;
+    }
+    if (idle >= sessionLength - warningLength && !warningVisible && mounted) {
+      warningVisible = true;
+      final context = navigatorKey.currentContext;
+      if (context == null) return;
+      final stay = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Session expiring soon'),
+          content: const Text(
+            'You will be signed out after 30 minutes of inactivity.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Log out'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Stay signed in'),
+            ),
+          ],
+        ),
+      );
+      warningVisible = false;
+      if (stay == true) {
+        await _recordActivity();
+      } else if (user != null) {
+        await logout();
+      }
+    }
   }
 
   Future<void> _restore() async {
     final prefs = await SharedPreferences.getInstance();
     api.token = prefs.getString('token');
+    final savedActivity = prefs.getInt('last_activity');
+    if (savedActivity != null) {
+      lastActivity = DateTime.fromMillisecondsSinceEpoch(savedActivity);
+    }
+    if (api.token != null &&
+        DateTime.now().difference(lastActivity) >= sessionLength) {
+      await prefs.remove('token');
+      await prefs.remove('last_activity');
+      api.token = null;
+    }
     if (api.token != null) {
       try {
         user = await api.request('/auth/me');
-        if (user?['notificationChannels']?['mobilePush'] == true) unawaited(PushService.enable(api).catchError((_) {}));
+        if (user?['notificationChannels']?['mobilePush'] == true) {
+          unawaited(PushService.enable(api).catchError((_) {}));
+        }
       } catch (_) {
         await prefs.remove('token');
         api.token = null;
       }
     }
+    if (user != null) _startSessionTimer();
     if (mounted) setState(() => loading = false);
   }
 
@@ -154,26 +315,52 @@ class _KayaToAppState extends State<KayaToApp> {
     user = data['user'];
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('token', api.token!);
+    lastActivity = DateTime.now();
+    await prefs.setInt('last_activity', lastActivity.millisecondsSinceEpoch);
+    _startSessionTimer();
     setState(() {});
-    if (user?['notificationChannels']?['mobilePush'] == true) unawaited(PushService.enable(api).catchError((_) {}));
+    if (user?['notificationChannels']?['mobilePush'] == true) {
+      unawaited(PushService.enable(api).catchError((_) {}));
+    }
   }
 
-  Future<void> logout() async {
+  Future<void> logout({bool sessionExpired = false}) async {
     final prefs = await SharedPreferences.getInstance();
-    if (user?['notificationChannels']?['mobilePush'] == true) await PushService.disable(api).catchError((_) {});
+    if (user?['notificationChannels']?['mobilePush'] == true) {
+      await PushService.disable(api).catchError((_) {});
+    }
     await prefs.remove('token');
+    await prefs.remove('last_activity');
+    sessionTimer?.cancel();
     api.token = null;
-    setState(() => user = null);
+    if (mounted) setState(() => user = null);
+    if (sessionExpired) {
+      kayaToast.info(
+        'Session expired',
+        description: 'Sign in again to continue.',
+      );
+    }
   }
+
+  void updateUser(Map<String, dynamic> nextUser) =>
+      setState(() => user = nextUser);
 
   @override
   Widget build(BuildContext context) => MaterialApp(
+    navigatorKey: navigatorKey,
     title: 'KayaTo',
     debugShowCheckedModeBanner: false,
     themeMode: mode,
     theme: _theme(false),
     darkTheme: _theme(true),
-    builder: (context, child) => KayaToaster(child: child!),
+    builder: (context, child) => KayaToaster(
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) => unawaited(_recordActivity()),
+        onPointerMove: (_) => unawaited(_recordActivity()),
+        child: child!,
+      ),
+    ),
     home: loading
         ? const Scaffold(body: Center(child: CircularProgressIndicator()))
         : user == null
@@ -182,6 +369,7 @@ class _KayaToAppState extends State<KayaToApp> {
             api: api,
             user: user!,
             onLogout: logout,
+            onUserUpdated: updateUser,
             onTheme: () => setState(
               () => mode = mode == ThemeMode.dark
                   ? ThemeMode.light
@@ -750,6 +938,21 @@ class _AuthScreenState extends State<AuthScreen> {
                               : 'Log in',
                         ),
                       ),
+                      if (!register && !awaitingCode)
+                        TextButton(
+                          onPressed: busy
+                              ? null
+                              : () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => PasswordResetScreen(
+                                      api: widget.api,
+                                      initialEmail: email.text,
+                                    ),
+                                  ),
+                                ),
+                          child: const Text('Forgot password?'),
+                        ),
                       TextButton(
                         onPressed: busy
                             ? null
@@ -821,12 +1024,14 @@ class HomeScreen extends StatefulWidget {
     required this.api,
     required this.user,
     required this.onLogout,
+    required this.onUserUpdated,
     required this.onTheme,
     super.key,
   });
   final ApiClient api;
   final Map<String, dynamic> user;
   final VoidCallback onLogout, onTheme;
+  final ValueChanged<Map<String, dynamic>> onUserUpdated;
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -839,12 +1044,13 @@ class _HomeScreenState extends State<HomeScreen> {
       DashboardTab(api: widget.api, user: widget.user),
       TasksTab(api: widget.api),
       PlannerTab(api: widget.api),
-      ChatTab(api: widget.api),
+      ChatTab(api: widget.api, user: widget.user),
       MoreTab(
         api: widget.api,
         user: widget.user,
         onLogout: widget.onLogout,
         onTheme: widget.onTheme,
+        onUserUpdated: widget.onUserUpdated,
       ),
     ];
     return Scaffold(
@@ -854,6 +1060,16 @@ class _HomeScreenState extends State<HomeScreen> {
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
         actions: [
+          IconButton(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => NotificationCenterPage(api: widget.api),
+              ),
+            ),
+            tooltip: 'Notifications',
+            icon: const Icon(Icons.notifications_outlined),
+          ),
           IconButton(
             onPressed: widget.onTheme,
             tooltip: 'Switch theme',
@@ -1063,13 +1279,84 @@ class _TasksTabState extends State<TasksTab> {
     }
   }
 
-  Future<void> done(Map task) async {
-    await widget.api.request(
-      '/tasks/${task['_id']}',
-      method: 'PATCH',
-      body: {'status': 'done'},
+  Future<void> edit(Map task) async {
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => TaskSheet(task: Map<String, dynamic>.from(task)),
     );
-    load();
+    if (result == null) return;
+    try {
+      final targetStatus =
+          result.remove('status')?.toString() ?? task['status'].toString();
+      var currentStatus = task['status'].toString();
+      await widget.api.request(
+        '/tasks/${task['_id']}',
+        method: 'PATCH',
+        body: result,
+      );
+      const statuses = ['todo', 'in-progress', 'review', 'done'];
+      while (currentStatus != targetStatus) {
+        final currentIndex = statuses.indexOf(currentStatus);
+        final targetIndex = statuses.indexOf(targetStatus);
+        currentStatus =
+            statuses[currentIndex + (targetIndex > currentIndex ? 1 : -1)];
+        await widget.api.request(
+          '/tasks/${task['_id']}',
+          method: 'PATCH',
+          body: {'status': currentStatus},
+        );
+      }
+      kayaToast.success('Task updated');
+      await load();
+    } catch (e) {
+      kayaToast.error('Could not update task', description: e.toString());
+    }
+  }
+
+  Future<void> remove(Map task) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete task?'),
+        content: Text('“${task['title']}” will be permanently deleted.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.api.request('/tasks/${task['_id']}', method: 'DELETE');
+      await load();
+    } catch (e) {
+      kayaToast.error('Could not delete task', description: e.toString());
+    }
+  }
+
+  Future<void> done(Map task) async {
+    try {
+      const statuses = ['todo', 'in-progress', 'review', 'done'];
+      var index = statuses.indexOf(task['status']);
+      while (index < statuses.length - 1) {
+        index += 1;
+        await widget.api.request(
+          '/tasks/${task['_id']}',
+          method: 'PATCH',
+          body: {'status': statuses[index]},
+        );
+      }
+      await load();
+    } catch (e) {
+      kayaToast.error('Could not complete task', description: e.toString());
+    }
   }
 
   @override
@@ -1101,6 +1388,7 @@ class _TasksTabState extends State<TasksTab> {
             for (final task in tasks)
               Card(
                 child: ListTile(
+                  onTap: () => edit(task),
                   minVerticalPadding: 14,
                   title: Text(
                     task['title'],
@@ -1118,7 +1406,17 @@ class _TasksTabState extends State<TasksTab> {
                           : Icons.radio_button_unchecked,
                     ),
                   ),
-                  trailing: PriorityChip(task['priority']),
+                  trailing: PopupMenuButton<String>(
+                    onSelected: (value) =>
+                        value == 'edit' ? edit(task) : remove(task),
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'edit', child: Text('Edit task')),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Delete task'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
         ],
@@ -1172,6 +1470,69 @@ class _BillsTabState extends State<BillsTab> {
     }
   }
 
+  Future<void> edit(Map bill) async {
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => BillSheet(
+        currency: widget.user['currency'] ?? 'PHP',
+        bill: Map<String, dynamic>.from(bill),
+      ),
+    );
+    if (result == null) return;
+    try {
+      await widget.api.request(
+        '/bills/${bill['_id']}',
+        method: 'PATCH',
+        body: result,
+      );
+      kayaToast.success('Bill updated');
+      await load();
+    } catch (e) {
+      kayaToast.error('Could not update bill', description: e.toString());
+    }
+  }
+
+  Future<void> setPaid(Map bill) async {
+    try {
+      await widget.api.request(
+        '/bills/${bill['_id']}',
+        method: 'PATCH',
+        body: {'status': bill['status'] == 'paid' ? 'unpaid' : 'paid'},
+      );
+      await load();
+    } catch (e) {
+      kayaToast.error('Could not update bill', description: e.toString());
+    }
+  }
+
+  Future<void> remove(Map bill) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete reminder?'),
+        content: Text('“${bill['name']}” will be removed.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.api.request('/bills/${bill['_id']}', method: 'DELETE');
+      await load();
+    } catch (e) {
+      kayaToast.error('Could not delete bill', description: e.toString());
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.transparent,
@@ -1201,18 +1562,48 @@ class _BillsTabState extends State<BillsTab> {
             for (final bill in bills)
               Card(
                 child: ListTile(
+                  onTap: () => edit(bill),
                   minVerticalPadding: 14,
-                  leading: const Icon(Icons.receipt_long_outlined),
+                  leading: IconButton(
+                    onPressed: () => setPaid(bill),
+                    tooltip: bill['status'] == 'paid'
+                        ? 'Mark unpaid'
+                        : 'Mark paid',
+                    icon: Icon(
+                      bill['status'] == 'paid'
+                          ? Icons.check_circle
+                          : Icons.receipt_long_outlined,
+                    ),
+                  ),
                   title: Text(
                     bill['name'],
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
-                  subtitle: Text(
-                    'Due ${formatDateOnly(bill['dueDate'])}',
-                  ),
-                  trailing: Text(
-                    formatMoney(bill['amount'] as num, widget.user['currency'] ?? 'PHP'),
-                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  subtitle: Text('Due ${formatDateOnly(bill['dueDate'])}'),
+                  trailing: PopupMenuButton<String>(
+                    onSelected: (value) => value == 'edit'
+                        ? edit(bill)
+                        : value == 'paid'
+                        ? setPaid(bill)
+                        : remove(bill),
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Text('Edit reminder'),
+                      ),
+                      PopupMenuItem(
+                        value: 'paid',
+                        child: Text(
+                          bill['status'] == 'paid'
+                              ? 'Mark unpaid'
+                              : 'Mark paid',
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Delete reminder'),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1343,8 +1734,9 @@ class _PlannerTabState extends State<PlannerTab> {
 }
 
 class ChatTab extends StatefulWidget {
-  const ChatTab({required this.api, super.key});
+  const ChatTab({required this.api, required this.user, super.key});
   final ApiClient api;
+  final Map<String, dynamic> user;
   @override
   State<ChatTab> createState() => _ChatTabState();
 }
@@ -1373,6 +1765,32 @@ class _ChatTabState extends State<ChatTab> {
     } finally {
       if (mounted) setState(() => loading = false);
     }
+  }
+
+  Future<void> manageFriends() async {
+    final conversation = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(builder: (_) => FriendsPage(api: widget.api)),
+    );
+    await loadConversations();
+    if (conversation != null && mounted) {
+      setState(() => active = conversation);
+      await loadMessages();
+    }
+  }
+
+  String conversationLabel(Map item) {
+    if (item['kind'] != 'direct') return '#${item['name']}';
+    final participants = (item['participants'] as List? ?? const []);
+    final other = participants
+        .cast<Map>()
+        .where(
+          (person) =>
+              '${person['_id'] ?? person['id']}' !=
+              '${widget.user['id'] ?? widget.user['_id']}',
+        )
+        .firstOrNull;
+    return other?['displayName']?.toString() ?? 'Direct message';
   }
 
   Future<void> loadMessages() async {
@@ -1408,6 +1826,26 @@ class _ChatTabState extends State<ChatTab> {
   @override
   Widget build(BuildContext context) => Column(
     children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                active == null ? 'Messages' : conversationLabel(active!),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ),
+            IconButton(
+              onPressed: manageFriends,
+              tooltip: 'Friends and requests',
+              icon: const Icon(Icons.person_add_alt_1_outlined),
+            ),
+          ],
+        ),
+      ),
       if (conversations.length > 1)
         SizedBox(
           height: 52,
@@ -1419,7 +1857,7 @@ class _ChatTabState extends State<ChatTab> {
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: ChoiceChip(
-                    label: Text('#${item['name']}'),
+                    label: Text(conversationLabel(item)),
                     selected: active?['_id'] == item['_id'],
                     onSelected: (_) {
                       setState(() => active = item);
@@ -1445,7 +1883,10 @@ class _ChatTabState extends State<ChatTab> {
                     if (error != null) ErrorBox(error!),
                     for (final message in messages)
                       Align(
-                        alignment: message['senderType'] == 'ai'
+                        alignment:
+                            message['senderType'] == 'ai' ||
+                                '${message['sender']?['_id'] ?? message['sender']}' !=
+                                    '${widget.user['id'] ?? widget.user['_id']}'
                             ? Alignment.centerLeft
                             : Alignment.centerRight,
                         child: Container(
@@ -1522,11 +1963,13 @@ class MoreTab extends StatelessWidget {
     required this.user,
     required this.onLogout,
     required this.onTheme,
+    required this.onUserUpdated,
     super.key,
   });
   final ApiClient api;
   final Map<String, dynamic> user;
   final VoidCallback onLogout, onTheme;
+  final ValueChanged<Map<String, dynamic>> onUserUpdated;
   void open(BuildContext context, String title, Widget page) => Navigator.push(
     context,
     MaterialPageRoute(
@@ -1552,11 +1995,23 @@ class MoreTab extends StatelessWidget {
           children: [
             ListTile(
               minVerticalPadding: 12,
+              leading: const Icon(Icons.calendar_month_outlined),
+              title: const Text('Calendar'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () =>
+                  open(context, 'Calendar', CalendarPage(api: api, user: user)),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              minVerticalPadding: 12,
               leading: const Icon(Icons.receipt_long_outlined),
               title: const Text('Bills & reminders'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () =>
-                  open(context, 'Bills & reminders', BillsTab(api: api, user: user)),
+              onTap: () => open(
+                context,
+                'Bills & reminders',
+                BillsTab(api: api, user: user),
+              ),
             ),
             const Divider(height: 1),
             ListTile(
@@ -1564,7 +2019,8 @@ class MoreTab extends StatelessWidget {
               leading: const Icon(Icons.groups_outlined),
               title: const Text('Teams'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => open(context, 'Teams', TeamsPage(api: api)),
+              onTap: () =>
+                  open(context, 'Teams', TeamsPage(api: api, user: user)),
             ),
             const Divider(height: 1),
             ListTile(
@@ -1575,7 +2031,13 @@ class MoreTab extends StatelessWidget {
               onTap: () => open(
                 context,
                 'Settings',
-                SettingsTab(api: api, user: user, onLogout: onLogout, onTheme: onTheme),
+                SettingsTab(
+                  api: api,
+                  user: user,
+                  onLogout: onLogout,
+                  onTheme: onTheme,
+                  onUserUpdated: onUserUpdated,
+                ),
               ),
             ),
           ],
@@ -1586,8 +2048,9 @@ class MoreTab extends StatelessWidget {
 }
 
 class TeamsPage extends StatefulWidget {
-  const TeamsPage({required this.api, super.key});
+  const TeamsPage({required this.api, required this.user, super.key});
   final ApiClient api;
+  final Map<String, dynamic> user;
   @override
   State<TeamsPage> createState() => _TeamsPageState();
 }
@@ -1660,6 +2123,19 @@ class _TeamsPageState extends State<TeamsPage> {
         for (final team in teams)
           Card(
             child: ListTile(
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => TeamDetailPage(
+                      api: widget.api,
+                      team: Map<String, dynamic>.from(team),
+                      user: widget.user,
+                    ),
+                  ),
+                );
+                await load();
+              },
               leading: const CircleAvatar(child: Icon(Icons.groups_outlined)),
               title: Text(
                 team['name'],
@@ -1678,11 +2154,13 @@ class SettingsTab extends StatefulWidget {
     required this.user,
     required this.onLogout,
     required this.onTheme,
+    required this.onUserUpdated,
     super.key,
   });
   final ApiClient api;
   final Map<String, dynamic> user;
   final VoidCallback onLogout, onTheme;
+  final ValueChanged<Map<String, dynamic>> onUserUpdated;
   @override
   State<SettingsTab> createState() => _SettingsTabState();
 }
@@ -1698,8 +2176,12 @@ class _SettingsTabState extends State<SettingsTab> {
   @override
   void initState() {
     super.initState();
-    final preferences = Map<String, dynamic>.from(widget.user['notificationPreferences'] ?? const {});
-    final channels = Map<String, dynamic>.from(widget.user['notificationChannels'] ?? const {});
+    final preferences = Map<String, dynamic>.from(
+      widget.user['notificationPreferences'] ?? const {},
+    );
+    final channels = Map<String, dynamic>.from(
+      widget.user['notificationChannels'] ?? const {},
+    );
     categories = {
       'taskAssignments': preferences['taskAssignments'] ?? true,
       'deadlines': preferences['deadlines'] ?? true,
@@ -1707,47 +2189,84 @@ class _SettingsTabState extends State<SettingsTab> {
       'bills': preferences['bills'] ?? true,
     };
     mobilePush = channels['mobilePush'] ?? false;
-    currency = supportedCurrencies.contains(widget.user['currency']) ? widget.user['currency'] : 'PHP';
-    timezone = supportedTimezones.contains(widget.user['timezone']) ? widget.user['timezone'] : 'Asia/Manila';
+    currency = supportedCurrencies.contains(widget.user['currency'])
+        ? widget.user['currency']
+        : 'PHP';
+    timezone = supportedTimezones.contains(widget.user['timezone'])
+        ? widget.user['timezone']
+        : 'Asia/Manila';
   }
 
   Future<void> saveRegionalPreferences() async {
-    setState(() { saving = true; error = null; });
+    setState(() {
+      saving = true;
+      error = null;
+    });
     try {
-      final updated = Map<String, dynamic>.from(await widget.api.request('/auth/me', method: 'PATCH', body: {
-        'currency': currency,
-        'timezone': timezone,
-      }));
-      widget.user..clear()..addAll(updated);
+      final updated = Map<String, dynamic>.from(
+        await widget.api.request(
+          '/auth/me',
+          method: 'PATCH',
+          body: {'currency': currency, 'timezone': timezone},
+        ),
+      );
+      widget.user
+        ..clear()
+        ..addAll(updated);
+      widget.onUserUpdated(updated);
       if (mounted) kayaToast.success('Regional settings updated');
     } catch (exception) {
-      if (mounted) setState(() => error = exception.toString().replaceFirst('Exception: ', ''));
+      if (mounted) {
+        setState(
+          () => error = exception.toString().replaceFirst('Exception: ', ''),
+        );
+      }
     } finally {
       if (mounted) setState(() => saving = false);
     }
   }
 
   Future<void> saveNotifications() async {
-    setState(() { saving = true; error = null; });
+    setState(() {
+      saving = true;
+      error = null;
+    });
     try {
       if (mobilePush) {
         await PushService.enable(widget.api);
       } else {
         await PushService.disable(widget.api);
       }
-      final existingChannels = Map<String, dynamic>.from(widget.user['notificationChannels'] ?? const {});
-      await widget.api.request('/auth/me', method: 'PATCH', body: {
-        'notificationPreferences': categories,
-        'notificationChannels': {
-          'inApp': existingChannels['inApp'] ?? true,
-          'email': existingChannels['email'] ?? false,
-          'browserPush': existingChannels['browserPush'] ?? false,
-          'mobilePush': mobilePush,
+      final existingChannels = Map<String, dynamic>.from(
+        widget.user['notificationChannels'] ?? const {},
+      );
+      await widget.api.request(
+        '/auth/me',
+        method: 'PATCH',
+        body: {
+          'notificationPreferences': categories,
+          'notificationChannels': {
+            'inApp': existingChannels['inApp'] ?? true,
+            'email': existingChannels['email'] ?? false,
+            'browserPush': existingChannels['browserPush'] ?? false,
+            'mobilePush': mobilePush,
+          },
         },
-      });
-      if (mounted) kayaToast.success('Notifications updated', description: mobilePush ? 'This device can now receive KayaTo reminders.' : 'Mobile push is turned off on this device.');
+      );
+      if (mounted) {
+        kayaToast.success(
+          'Notifications updated',
+          description: mobilePush
+              ? 'This device can now receive KayaTo reminders.'
+              : 'Mobile push is turned off on this device.',
+        );
+      }
     } catch (exception) {
-      if (mounted) setState(() => error = exception.toString().replaceFirst('Exception: ', ''));
+      if (mounted) {
+        setState(
+          () => error = exception.toString().replaceFirst('Exception: ', ''),
+        );
+      }
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -1771,6 +2290,35 @@ class _SettingsTabState extends State<SettingsTab> {
               leading: const CircleAvatar(child: Icon(Icons.person_outline)),
               title: Text(widget.user['displayName']),
               subtitle: Text(widget.user['email']),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () async {
+                final updated = await Navigator.push<Map<String, dynamic>>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        ProfileEditPage(api: widget.api, user: widget.user),
+                  ),
+                );
+                if (updated != null) {
+                  widget.user
+                    ..clear()
+                    ..addAll(updated);
+                  widget.onUserUpdated(updated);
+                  if (mounted) setState(() {});
+                }
+              },
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.password_outlined),
+              title: const Text('Change password'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ChangePasswordPage(api: widget.api),
+                ),
+              ),
             ),
             const Divider(height: 1),
             ListTile(
@@ -1789,11 +2337,38 @@ class _SettingsTabState extends State<SettingsTab> {
               ),
               onTap: widget.onLogout,
             ),
+            ListTile(
+              leading: Icon(
+                Icons.delete_forever_outlined,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: Text(
+                'Delete account',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+              subtitle: const Text(
+                'Permanently remove your account and personal data',
+              ),
+              onTap: () async {
+                final deleted = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => DeleteAccountPage(api: widget.api),
+                  ),
+                );
+                if (deleted == true) widget.onLogout();
+              },
+            ),
           ],
         ),
       ),
       const SizedBox(height: 16),
-      Text('Regional settings', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+      Text(
+        'Regional settings',
+        style: Theme.of(
+          context,
+        ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+      ),
       const SizedBox(height: 8),
       Card(
         child: Padding(
@@ -1803,15 +2378,31 @@ class _SettingsTabState extends State<SettingsTab> {
               DropdownButtonFormField<String>(
                 initialValue: timezone,
                 decoration: const InputDecoration(labelText: 'Timezone'),
-                items: supportedTimezones.map((value) => DropdownMenuItem(value: value, child: Text(value.replaceAll('_', ' ')))).toList(),
-                onChanged: saving ? null : (value) => setState(() => timezone = value!),
+                items: supportedTimezones
+                    .map(
+                      (value) => DropdownMenuItem(
+                        value: value,
+                        child: Text(value.replaceAll('_', ' ')),
+                      ),
+                    )
+                    .toList(),
+                onChanged: saving
+                    ? null
+                    : (value) => setState(() => timezone = value!),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: currency,
                 decoration: const InputDecoration(labelText: 'Currency'),
-                items: supportedCurrencies.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
-                onChanged: saving ? null : (value) => setState(() => currency = value!),
+                items: supportedCurrencies
+                    .map(
+                      (value) =>
+                          DropdownMenuItem(value: value, child: Text(value)),
+                    )
+                    .toList(),
+                onChanged: saving
+                    ? null
+                    : (value) => setState(() => currency = value!),
               ),
               const SizedBox(height: 16),
               Align(
@@ -1827,14 +2418,23 @@ class _SettingsTabState extends State<SettingsTab> {
         ),
       ),
       const SizedBox(height: 16),
-      Text('Notifications', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+      Text(
+        'Notifications',
+        style: Theme.of(
+          context,
+        ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+      ),
       const SizedBox(height: 8),
       if (error != null) ErrorBox(error!),
       Card(
         child: Column(
           children: [
             for (final option in const [
-              ('taskAssignments', 'Task assignments', 'Task activity and assignments'),
+              (
+                'taskAssignments',
+                'Task assignments',
+                'Task activity and assignments',
+              ),
               ('deadlines', 'Deadlines', 'Upcoming and overdue tasks'),
               ('teamMessages', 'Messages', 'Team, friend, and chat activity'),
               ('bills', 'Bills', 'Upcoming and overdue payments'),
@@ -1843,22 +2443,35 @@ class _SettingsTabState extends State<SettingsTab> {
                 title: Text(option.$2),
                 subtitle: Text(option.$3),
                 value: categories[option.$1]!,
-                onChanged: saving ? null : (value) => setState(() => categories[option.$1] = value),
+                onChanged: saving
+                    ? null
+                    : (value) => setState(() => categories[option.$1] = value),
               ),
               const Divider(height: 1),
             ],
             SwitchListTile(
               secondary: const Icon(Icons.notifications_active_outlined),
               title: const Text('Mobile push'),
-              subtitle: Text(PushService.configured ? 'Receive selected reminders on this device' : 'Add Firebase dart-define values to enable mobile push'),
+              subtitle: Text(
+                PushService.configured
+                    ? 'Receive selected reminders on this device'
+                    : 'Add Firebase dart-define values to enable mobile push',
+              ),
               value: mobilePush,
-              onChanged: saving || !PushService.configured ? null : (value) => setState(() => mobilePush = value),
+              onChanged: saving || !PushService.configured
+                  ? null
+                  : (value) => setState(() => mobilePush = value),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
               child: FilledButton.icon(
                 onPressed: saving ? null : saveNotifications,
-                icon: saving ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.save_outlined),
+                icon: saving
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save_outlined),
                 label: Text(saving ? 'Saving...' : 'Save notifications'),
               ),
             ),
@@ -1869,20 +2482,1272 @@ class _SettingsTabState extends State<SettingsTab> {
   );
 }
 
+class PasswordResetScreen extends StatefulWidget {
+  const PasswordResetScreen({
+    required this.api,
+    this.initialEmail = '',
+    super.key,
+  });
+  final ApiClient api;
+  final String initialEmail;
+  @override
+  State<PasswordResetScreen> createState() => _PasswordResetScreenState();
+}
+
+class _PasswordResetScreenState extends State<PasswordResetScreen> {
+  late final TextEditingController email;
+  final code = TextEditingController(),
+      password = TextEditingController(),
+      confirm = TextEditingController();
+  bool codeSent = false, busy = false;
+  String? error;
+  @override
+  void initState() {
+    super.initState();
+    email = TextEditingController(text: widget.initialEmail);
+  }
+
+  @override
+  void dispose() {
+    email.dispose();
+    code.dispose();
+    password.dispose();
+    confirm.dispose();
+    super.dispose();
+  }
+
+  Future<void> submit() async {
+    setState(() {
+      busy = true;
+      error = null;
+    });
+    try {
+      if (!codeSent) {
+        await widget.api.request(
+          '/auth/forgot-password',
+          method: 'POST',
+          body: {'email': email.text.trim()},
+        );
+        setState(() => codeSent = true);
+        kayaToast.success(
+          'Reset code requested',
+          description: 'Check your email if it belongs to a KayaTo account.',
+        );
+      } else {
+        if (password.text != confirm.text) {
+          throw Exception('Passwords do not match.');
+        }
+        await widget.api.request(
+          '/auth/reset-password',
+          method: 'POST',
+          body: {
+            'email': email.text.trim(),
+            'code': code.text.trim(),
+            'newPassword': password.text,
+          },
+        );
+        if (!mounted) return;
+        kayaToast.success(
+          'Password reset',
+          description: 'You can now sign in with your new password.',
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => error = e.toString().replaceFirst('Exception: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Reset password')),
+    body: ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Text(
+          codeSent ? 'Enter your reset code' : 'Recover your account',
+          style: Theme.of(
+            context,
+          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          codeSent
+              ? 'Use the six-digit code sent to your email.'
+              : 'We will send a short-lived code to your account email.',
+        ),
+        const SizedBox(height: 20),
+        if (error != null) ErrorBox(error!),
+        TextField(
+          controller: email,
+          enabled: !codeSent,
+          keyboardType: TextInputType.emailAddress,
+          decoration: const InputDecoration(labelText: 'Email address'),
+        ),
+        if (codeSent) ...[
+          const SizedBox(height: 12),
+          TextField(
+            controller: code,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            decoration: const InputDecoration(
+              labelText: '6-digit code',
+              counterText: '',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: password,
+            obscureText: true,
+            decoration: const InputDecoration(labelText: 'New password'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: confirm,
+            obscureText: true,
+            decoration: const InputDecoration(labelText: 'Confirm password'),
+          ),
+        ],
+        const SizedBox(height: 20),
+        FilledButton(
+          onPressed: busy ? null : submit,
+          child: Text(
+            busy
+                ? 'Please wait...'
+                : codeSent
+                ? 'Reset password'
+                : 'Send reset code',
+          ),
+        ),
+        if (codeSent)
+          TextButton(
+            onPressed: busy ? null : () => setState(() => codeSent = false),
+            child: const Text('Use another email'),
+          ),
+      ],
+    ),
+  );
+}
+
+class NotificationCenterPage extends StatefulWidget {
+  const NotificationCenterPage({required this.api, super.key});
+  final ApiClient api;
+  @override
+  State<NotificationCenterPage> createState() => _NotificationCenterPageState();
+}
+
+class _NotificationCenterPageState extends State<NotificationCenterPage> {
+  List items = [];
+  bool loading = true;
+  String? error;
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  Future<void> load() async {
+    try {
+      items = await widget.api.request('/notifications');
+      error = null;
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> read(Map item) async {
+    if (item['read'] == true) return;
+    await widget.api.request(
+      '/notifications/${item['_id']}/read',
+      method: 'PATCH',
+    );
+    item['read'] = true;
+    if (mounted) setState(() {});
+  }
+
+  Future<void> readAll() async {
+    await widget.api.request('/notifications/read', method: 'PATCH');
+    for (final item in items) {
+      item['read'] = true;
+    }
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('Notifications'),
+      actions: [
+        TextButton(
+          onPressed: items.any((item) => item['read'] != true) ? readAll : null,
+          child: const Text('Read all'),
+        ),
+      ],
+    ),
+    body: RefreshIndicator(
+      onRefresh: load,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          if (error != null) ErrorBox(error!),
+          if (loading)
+            const Center(child: CircularProgressIndicator())
+          else if (items.isEmpty)
+            const EmptyCopy('You are all caught up.')
+          else
+            for (final item in items)
+              Card(
+                color: item['read'] == true
+                    ? null
+                    : Theme.of(
+                        context,
+                      ).colorScheme.primaryContainer.withValues(alpha: .45),
+                child: ListTile(
+                  onTap: () => read(item),
+                  leading: Icon(
+                    item['read'] == true
+                        ? Icons.notifications_none
+                        : Icons.notifications_active,
+                  ),
+                  title: Text(
+                    item['message'] ?? 'KayaTo notification',
+                    style: TextStyle(
+                      fontWeight: item['read'] == true
+                          ? FontWeight.w500
+                          : FontWeight.w800,
+                    ),
+                  ),
+                  subtitle: Text(
+                    item['type']?.toString().replaceAll('-', ' ') ?? 'Update',
+                  ),
+                  trailing: item['read'] == true
+                      ? null
+                      : const Icon(Icons.circle, size: 9),
+                ),
+              ),
+        ],
+      ),
+    ),
+  );
+}
+
+class FriendsPage extends StatefulWidget {
+  const FriendsPage({required this.api, super.key});
+  final ApiClient api;
+  @override
+  State<FriendsPage> createState() => _FriendsPageState();
+}
+
+class _FriendsPageState extends State<FriendsPage> {
+  final search = TextEditingController();
+  Map<String, dynamic> data = {'friends': [], 'incoming': [], 'outgoing': []};
+  List results = [];
+  bool loading = true;
+  String? error;
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  @override
+  void dispose() {
+    search.dispose();
+    super.dispose();
+  }
+
+  Future<void> load() async {
+    try {
+      data = Map<String, dynamic>.from(await widget.api.request('/friends'));
+      error = null;
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> find() async {
+    if (search.text.trim().length < 2) return;
+    try {
+      results = await widget.api.request(
+        '/users/search?q=${Uri.encodeQueryComponent(search.text.trim())}',
+      );
+      setState(() {});
+    } catch (e) {
+      setState(() => error = e.toString());
+    }
+  }
+
+  Future<void> request(Map person) async {
+    try {
+      await widget.api.request(
+        '/friends/requests',
+        method: 'POST',
+        body: {'recipientId': person['id']},
+      );
+      await load();
+      await find();
+    } catch (e) {
+      kayaToast.error('Could not send request', description: e.toString());
+    }
+  }
+
+  Future<void> accept(Map item) async {
+    try {
+      final response = await widget.api.request(
+        '/friends/requests/${item['requestId']}',
+        method: 'PATCH',
+        body: {'action': 'accept'},
+      );
+      await load();
+      if (mounted) {
+        Navigator.pop(
+          context,
+          Map<String, dynamic>.from(response['conversation']),
+        );
+      }
+    } catch (e) {
+      kayaToast.error('Could not accept request', description: e.toString());
+    }
+  }
+
+  Future<void> decline(Map item) async {
+    await widget.api.request(
+      '/friends/requests/${item['requestId']}',
+      method: 'DELETE',
+    );
+    await load();
+  }
+
+  Future<void> openChat(Map item) async {
+    final conversation = Map<String, dynamic>.from(
+      await widget.api.request(
+        '/friends/${item['user']['id']}/conversation',
+        method: 'POST',
+      ),
+    );
+    if (mounted) Navigator.pop(context, conversation);
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Friends')),
+    body: RefreshIndicator(
+      onRefresh: load,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: search,
+                  onSubmitted: (_) => find(),
+                  decoration: const InputDecoration(
+                    labelText: 'Find by name, username, or email',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filled(
+                onPressed: find,
+                icon: const Icon(Icons.search),
+              ),
+            ],
+          ),
+          if (error != null) ...[const SizedBox(height: 12), ErrorBox(error!)],
+          if (results.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text(
+              'Search results',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            for (final person in results)
+              ListTile(
+                title: Text(person['displayName']),
+                subtitle: Text('@${person['username']}'),
+                trailing: person['relationshipStatus'] == 'none'
+                    ? TextButton(
+                        onPressed: () => request(person),
+                        child: const Text('Add'),
+                      )
+                    : Text(person['relationshipStatus']),
+              ),
+          ],
+          if (loading)
+            const Padding(
+              padding: EdgeInsets.all(32),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          if ((data['incoming'] as List).isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text(
+              'Requests',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            for (final item in data['incoming'])
+              ListTile(
+                title: Text(item['user']['displayName']),
+                subtitle: Text('@${item['user']['username']}'),
+                trailing: Wrap(
+                  children: [
+                    IconButton(
+                      onPressed: () => decline(item),
+                      icon: const Icon(Icons.close),
+                    ),
+                    IconButton.filled(
+                      onPressed: () => accept(item),
+                      icon: const Icon(Icons.check),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+          const SizedBox(height: 16),
+          const Text('Friends', style: TextStyle(fontWeight: FontWeight.w800)),
+          if ((data['friends'] as List).isEmpty)
+            const EmptyCopy('No friends yet. Search for a KayaTo user above.')
+          else
+            for (final item in data['friends'])
+              Card(
+                child: ListTile(
+                  onTap: () => openChat(item),
+                  leading: const CircleAvatar(
+                    child: Icon(Icons.person_outline),
+                  ),
+                  title: Text(item['user']['displayName']),
+                  subtitle: Text('@${item['user']['username']}'),
+                  trailing: const Icon(Icons.chat_bubble_outline),
+                ),
+              ),
+          if ((data['outgoing'] as List).isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text(
+              'Sent requests',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            for (final item in data['outgoing'])
+              ListTile(
+                title: Text(item['user']['displayName']),
+                trailing: TextButton(
+                  onPressed: () => decline(item),
+                  child: const Text('Cancel'),
+                ),
+              ),
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
+class CalendarPage extends StatefulWidget {
+  const CalendarPage({required this.api, required this.user, super.key});
+  final ApiClient api;
+  final Map<String, dynamic> user;
+  @override
+  State<CalendarPage> createState() => _CalendarPageState();
+}
+
+class _CalendarPageState extends State<CalendarPage> {
+  DateTime selected = DateTime.now();
+  List tasks = [], bills = [];
+  bool loading = true;
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  Future<void> load() async {
+    final results = await Future.wait([
+      widget.api.request('/tasks'),
+      widget.api.request('/bills'),
+    ]);
+    tasks = results[0];
+    bills = results[1];
+    if (mounted) setState(() => loading = false);
+  }
+
+  bool sameDay(dynamic raw) {
+    final value = DateTime.tryParse(raw?.toString() ?? '')?.toLocal();
+    return value != null &&
+        value.year == selected.year &&
+        value.month == selected.month &&
+        value.day == selected.day;
+  }
+
+  Future<void> createTask() async {
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const TaskSheet(),
+    );
+    if (result != null) {
+      await widget.api.request('/tasks', method: 'POST', body: result);
+      await load();
+    }
+  }
+
+  Future<void> createBill() async {
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => BillSheet(currency: widget.user['currency'] ?? 'PHP'),
+    );
+    if (result != null) {
+      await widget.api.request('/bills', method: 'POST', body: result);
+      await load();
+    }
+  }
+
+  Future<void> editTask(Map task) async {
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => TaskSheet(task: Map<String, dynamic>.from(task)),
+    );
+    if (result == null) return;
+    final target = result.remove('status');
+    await widget.api.request(
+      '/tasks/${task['_id']}',
+      method: 'PATCH',
+      body: result,
+    );
+    const states = ['todo', 'in-progress', 'review', 'done'];
+    var current = task['status'];
+    while (current != target) {
+      final at = states.indexOf(current);
+      final destination = states.indexOf(target);
+      current = states[at + (destination > at ? 1 : -1)];
+      await widget.api.request(
+        '/tasks/${task['_id']}',
+        method: 'PATCH',
+        body: {'status': current},
+      );
+    }
+    await load();
+  }
+
+  Future<void> editBill(Map bill) async {
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => BillSheet(
+        currency: widget.user['currency'] ?? 'PHP',
+        bill: Map<String, dynamic>.from(bill),
+      ),
+    );
+    if (result != null) {
+      await widget.api.request(
+        '/bills/${bill['_id']}',
+        method: 'PATCH',
+        body: result,
+      );
+      await load();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dayTasks = tasks.where((item) => sameDay(item['dueDate'])).toList();
+    final dayBills = bills.where((item) => sameDay(item['dueDate'])).toList();
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        CalendarDatePicker(
+          initialDate: selected,
+          firstDate: DateTime(2000),
+          lastDate: DateTime.now().add(const Duration(days: 3650)),
+          onDateChanged: (value) => setState(() => selected = value),
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: createTask,
+                icon: const Icon(Icons.add_task),
+                label: const Text('Add task'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: createBill,
+                icon: const Icon(Icons.add_card),
+                label: const Text('Add bill'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (loading)
+          const Center(child: CircularProgressIndicator())
+        else ...[
+          Text(
+            'Schedule for ${selected.toIso8601String().split('T').first}',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          if (dayTasks.isEmpty && dayBills.isEmpty)
+            const EmptyCopy('Nothing scheduled for this day.'),
+          for (final task in dayTasks)
+            Card(
+              child: ListTile(
+                onTap: () => editTask(task),
+                leading: const Icon(Icons.task_alt),
+                title: Text(task['title']),
+                subtitle: Text('${task['project']} · ${task['status']}'),
+                trailing: const Icon(Icons.edit_outlined),
+              ),
+            ),
+          for (final bill in dayBills)
+            Card(
+              child: ListTile(
+                onTap: () => editBill(bill),
+                leading: const Icon(Icons.receipt_long_outlined),
+                title: Text(bill['name']),
+                subtitle: Text(
+                  formatMoney(
+                    bill['amount'] as num,
+                    bill['currency'] ?? widget.user['currency'] ?? 'PHP',
+                  ),
+                ),
+                trailing: const Icon(Icons.edit_outlined),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+class TeamDetailPage extends StatefulWidget {
+  const TeamDetailPage({
+    required this.api,
+    required this.team,
+    required this.user,
+    super.key,
+  });
+  final ApiClient api;
+  final Map<String, dynamic> team, user;
+  @override
+  State<TeamDetailPage> createState() => _TeamDetailPageState();
+}
+
+class _TeamDetailPageState extends State<TeamDetailPage> {
+  late Map<String, dynamic> team;
+  late final TextEditingController name, description, memberEmail;
+  String memberRole = 'member';
+  String? error;
+  @override
+  void initState() {
+    super.initState();
+    team = widget.team;
+    name = TextEditingController(text: team['name']);
+    description = TextEditingController(text: team['description'] ?? '');
+    memberEmail = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    name.dispose();
+    description.dispose();
+    memberEmail.dispose();
+    super.dispose();
+  }
+
+  String userId(Map member) =>
+      '${member['user']?['_id'] ?? member['user']?['id'] ?? member['user']}';
+  bool get owner =>
+      '${team['owner']?['_id'] ?? team['owner']?['id'] ?? team['owner']}' ==
+      '${widget.user['id'] ?? widget.user['_id']}';
+  Future<void> save() async {
+    try {
+      team = Map<String, dynamic>.from(
+        await widget.api.request(
+          '/teams/${team['_id']}',
+          method: 'PATCH',
+          body: {'name': name.text, 'description': description.text},
+        ),
+      );
+      setState(() {});
+      kayaToast.success('Team updated');
+    } catch (e) {
+      setState(() => error = e.toString());
+    }
+  }
+
+  Future<void> addMember() async {
+    try {
+      team = Map<String, dynamic>.from(
+        await widget.api.request(
+          '/teams/${team['_id']}/members',
+          method: 'POST',
+          body: {'email': memberEmail.text, 'role': memberRole},
+        ),
+      );
+      memberEmail.clear();
+      setState(() {});
+    } catch (e) {
+      setState(() => error = e.toString());
+    }
+  }
+
+  Future<void> role(Map member, String value) async {
+    team = Map<String, dynamic>.from(
+      await widget.api.request(
+        '/teams/${team['_id']}/members/${userId(member)}',
+        method: 'PATCH',
+        body: {'role': value},
+      ),
+    );
+    setState(() {});
+  }
+
+  Future<void> transferOwnership(Map member) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Transfer team ownership?'),
+        content: Text(
+          '${member['user']?['displayName'] ?? 'This member'} will become the owner. Your role will change to manager.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Transfer ownership'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    team = Map<String, dynamic>.from(
+      await widget.api.request(
+        '/teams/${team['_id']}/transfer-ownership',
+        method: 'POST',
+        body: {'userId': userId(member)},
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> remove(Map member) async {
+    team = Map<String, dynamic>.from(
+      await widget.api.request(
+        '/teams/${team['_id']}/members/${userId(member)}',
+        method: 'DELETE',
+      ),
+    );
+    setState(() {});
+  }
+
+  Future<void> deleteTeam() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete team?'),
+        content: const Text(
+          'Shared tasks, chat, and activity for this team will be permanently removed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete team'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await widget.api.request('/teams/${team['_id']}', method: 'DELETE');
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text(team['name'])),
+    body: ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        if (error != null) ErrorBox(error!),
+        TextField(
+          controller: name,
+          decoration: const InputDecoration(labelText: 'Team name'),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: description,
+          maxLines: 3,
+          decoration: const InputDecoration(labelText: 'Description'),
+        ),
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerRight,
+          child: FilledButton.icon(
+            onPressed: save,
+            icon: const Icon(Icons.save_outlined),
+            label: const Text('Save team'),
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text(
+          'Add member',
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: memberEmail,
+          keyboardType: TextInputType.emailAddress,
+          decoration: const InputDecoration(labelText: 'KayaTo account email'),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                initialValue: memberRole,
+                decoration: const InputDecoration(labelText: 'Role'),
+                items: const ['manager', 'member', 'viewer']
+                    .map(
+                      (value) =>
+                          DropdownMenuItem(value: value, child: Text(value)),
+                    )
+                    .toList(),
+                onChanged: (value) => memberRole = value!,
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton.filled(
+              onPressed: addMember,
+              icon: const Icon(Icons.person_add_alt_1),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        Text(
+          'Members',
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        for (final member in (team['members'] as List))
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const CircleAvatar(child: Icon(Icons.person_outline)),
+            title: Text(member['user']?['displayName'] ?? 'Member'),
+            subtitle: Text(member['user']?['email'] ?? ''),
+            trailing: !owner || member['role'] == 'owner'
+                ? Text(member['role'])
+                : PopupMenuButton<String>(
+                    onSelected: (value) => value == 'remove'
+                        ? remove(member)
+                        : value == 'owner'
+                        ? transferOwnership(member)
+                        : role(member, value),
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'owner', child: Text('Make owner')),
+                      PopupMenuItem(value: 'manager', child: Text('Manager')),
+                      PopupMenuItem(value: 'member', child: Text('Member')),
+                      PopupMenuItem(value: 'viewer', child: Text('Viewer')),
+                      PopupMenuItem(value: 'remove', child: Text('Remove')),
+                    ],
+                  ),
+          ),
+        if (owner) ...[
+          const SizedBox(height: 24),
+          OutlinedButton.icon(
+            onPressed: deleteTeam,
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Delete team'),
+          ),
+        ],
+      ],
+    ),
+  );
+}
+
+class ProfileEditPage extends StatefulWidget {
+  const ProfileEditPage({required this.api, required this.user, super.key});
+  final ApiClient api;
+  final Map<String, dynamic> user;
+  @override
+  State<ProfileEditPage> createState() => _ProfileEditPageState();
+}
+
+class _ProfileEditPageState extends State<ProfileEditPage> {
+  late final TextEditingController first, last, username;
+  late String timezone, currency, usage;
+  String? error;
+  @override
+  void initState() {
+    super.initState();
+    first = TextEditingController(text: widget.user['firstName'] ?? '');
+    last = TextEditingController(text: widget.user['lastName'] ?? '');
+    username = TextEditingController(text: widget.user['username'] ?? '');
+    timezone = widget.user['timezone'] ?? 'Asia/Manila';
+    currency = widget.user['currency'] ?? 'PHP';
+    usage = widget.user['primaryUsage'] ?? 'both';
+  }
+
+  @override
+  void dispose() {
+    first.dispose();
+    last.dispose();
+    username.dispose();
+    super.dispose();
+  }
+
+  Future<void> save() async {
+    try {
+      final result = Map<String, dynamic>.from(
+        await widget.api.request(
+          '/auth/me',
+          method: 'PATCH',
+          body: {
+            'firstName': first.text,
+            'lastName': last.text,
+            'username': username.text,
+            'timezone': timezone,
+            'currency': currency,
+            'primaryUsage': usage,
+          },
+        ),
+      );
+      if (mounted) Navigator.pop(context, result);
+    } catch (e) {
+      setState(() => error = e.toString());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Edit profile')),
+    body: ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        if (error != null) ErrorBox(error!),
+        TextField(
+          controller: first,
+          inputFormatters: nameInputFormatters,
+          decoration: const InputDecoration(labelText: 'First name'),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: last,
+          inputFormatters: nameInputFormatters,
+          decoration: const InputDecoration(labelText: 'Last name'),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: username,
+          decoration: const InputDecoration(
+            labelText: 'Username',
+            prefixText: '@',
+          ),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          initialValue: timezone,
+          decoration: const InputDecoration(labelText: 'Timezone'),
+          items: supportedTimezones
+              .map(
+                (value) => DropdownMenuItem(value: value, child: Text(value)),
+              )
+              .toList(),
+          onChanged: (value) => timezone = value!,
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          initialValue: currency,
+          decoration: const InputDecoration(labelText: 'Currency'),
+          items: supportedCurrencies
+              .map(
+                (value) => DropdownMenuItem(value: value, child: Text(value)),
+              )
+              .toList(),
+          onChanged: (value) => currency = value!,
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          initialValue: usage,
+          decoration: const InputDecoration(labelText: 'Primary use'),
+          items:
+              const [
+                    ('personal', 'Personal'),
+                    ('team', 'Team'),
+                    ('both', 'Personal and team'),
+                  ]
+                  .map(
+                    (value) => DropdownMenuItem(
+                      value: value.$1,
+                      child: Text(value.$2),
+                    ),
+                  )
+                  .toList(),
+          onChanged: (value) => usage = value!,
+        ),
+        const SizedBox(height: 20),
+        FilledButton(onPressed: save, child: const Text('Save profile')),
+      ],
+    ),
+  );
+}
+
+class ChangePasswordPage extends StatefulWidget {
+  const ChangePasswordPage({required this.api, super.key});
+  final ApiClient api;
+  @override
+  State<ChangePasswordPage> createState() => _ChangePasswordPageState();
+}
+
+class _ChangePasswordPageState extends State<ChangePasswordPage> {
+  final current = TextEditingController(),
+      next = TextEditingController(),
+      confirm = TextEditingController();
+  String? error;
+  bool busy = false;
+  @override
+  void dispose() {
+    current.dispose();
+    next.dispose();
+    confirm.dispose();
+    super.dispose();
+  }
+
+  Future<void> save() async {
+    if (next.text != confirm.text) {
+      setState(() => error = 'Passwords do not match.');
+      return;
+    }
+    setState(() => busy = true);
+    try {
+      await widget.api.request(
+        '/auth/change-password',
+        method: 'POST',
+        body: {'currentPassword': current.text, 'newPassword': next.text},
+      );
+      if (mounted) {
+        kayaToast.success('Password changed');
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Change password')),
+    body: ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        if (error != null) ErrorBox(error!),
+        TextField(
+          controller: current,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'Current password'),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: next,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'New password'),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: confirm,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'Confirm new password'),
+        ),
+        const SizedBox(height: 20),
+        FilledButton(
+          onPressed: busy ? null : save,
+          child: Text(busy ? 'Updating...' : 'Update password'),
+        ),
+      ],
+    ),
+  );
+}
+
+class DeleteAccountPage extends StatefulWidget {
+  const DeleteAccountPage({required this.api, super.key});
+  final ApiClient api;
+  @override
+  State<DeleteAccountPage> createState() => _DeleteAccountPageState();
+}
+
+class _DeleteAccountPageState extends State<DeleteAccountPage> {
+  final password = TextEditingController(),
+      confirmation = TextEditingController();
+  String? error;
+  bool busy = false;
+  @override
+  void dispose() {
+    password.dispose();
+    confirmation.dispose();
+    super.dispose();
+  }
+
+  Future<void> remove() async {
+    setState(() => busy = true);
+    try {
+      await widget.api.request(
+        '/auth/me',
+        method: 'DELETE',
+        body: {'password': password.text, 'confirmation': confirmation.text},
+      );
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Delete account')),
+    body: ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Text(
+          'This is permanent',
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: Theme.of(context).colorScheme.error,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Your personal tasks, bills, friendships, and direct chats will be removed. Teams with other members must be transferred first.',
+        ),
+        const SizedBox(height: 20),
+        if (error != null) ErrorBox(error!),
+        TextField(
+          controller: password,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'Current password'),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: confirmation,
+          decoration: const InputDecoration(labelText: 'Type DELETE'),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 20),
+        FilledButton(
+          onPressed:
+              busy || password.text.isEmpty || confirmation.text != 'DELETE'
+              ? null
+              : remove,
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+          child: Text(busy ? 'Deleting...' : 'Permanently delete account'),
+        ),
+      ],
+    ),
+  );
+}
+
 class TaskSheet extends StatefulWidget {
-  const TaskSheet({super.key});
+  const TaskSheet({this.task, super.key});
+  final Map<String, dynamic>? task;
   @override
   State<TaskSheet> createState() => _TaskSheetState();
 }
 
 class _TaskSheetState extends State<TaskSheet> {
-  final key = GlobalKey<FormState>(),
-      title = TextEditingController(),
-      project = TextEditingController(text: 'Personal');
+  final key = GlobalKey<FormState>();
+  late final TextEditingController title, project, description, due;
   String priority = 'medium';
+  String status = 'todo';
+  List<Map<String, dynamic>> subtasks = [];
+
+  @override
+  void initState() {
+    super.initState();
+    final task = widget.task;
+    title = TextEditingController(text: task?['title'] ?? '');
+    project = TextEditingController(text: task?['project'] ?? 'Personal');
+    description = TextEditingController(text: task?['description'] ?? '');
+    due = TextEditingController(
+      text: task?['dueDate'] == null ? '' : formatDateOnly(task?['dueDate']),
+    );
+    priority = task?['priority'] ?? 'medium';
+    status = task?['status'] ?? 'todo';
+    subtasks = (task?['subtasks'] as List? ?? const [])
+        .map(
+          (item) => {
+            'title': item['title'].toString(),
+            'completed': item['completed'] == true,
+          },
+        )
+        .toList();
+  }
+
+  @override
+  void dispose() {
+    title.dispose();
+    project.dispose();
+    description.dispose();
+    due.dispose();
+    super.dispose();
+  }
+
+  Future<void> addSubtask() async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add subtask'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Subtask title'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value != null && value.isNotEmpty) {
+      setState(() => subtasks.add({'title': value, 'completed': false}));
+    }
+  }
+
   @override
   Widget build(BuildContext context) => FormSheet(
-    title: 'Create task',
+    title: widget.task == null ? 'Create task' : 'Edit task',
     child: Form(
       key: key,
       child: Column(
@@ -1892,6 +3757,16 @@ class _TaskSheetState extends State<TaskSheet> {
             autofocus: true,
             decoration: const InputDecoration(labelText: 'Task title'),
             validator: (v) => (v ?? '').trim().isEmpty ? 'Enter a title' : null,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: description,
+            minLines: 3,
+            maxLines: 6,
+            decoration: const InputDecoration(
+              labelText: 'Description',
+              alignLabelWithHint: true,
+            ),
           ),
           const SizedBox(height: 12),
           TextFormField(
@@ -1910,6 +3785,74 @@ class _TaskSheetState extends State<TaskSheet> {
             ].map((x) => DropdownMenuItem(value: x, child: Text(x))).toList(),
             onChanged: (v) => priority = v!,
           ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: status,
+            decoration: const InputDecoration(labelText: 'Status'),
+            items: const ['todo', 'in-progress', 'review', 'done']
+                .map(
+                  (value) => DropdownMenuItem(value: value, child: Text(value)),
+                )
+                .toList(),
+            onChanged: (value) => status = value!,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: due,
+            readOnly: true,
+            decoration: InputDecoration(
+              labelText: 'Due date',
+              suffixIcon: due.text.isEmpty
+                  ? const Icon(Icons.calendar_today_outlined)
+                  : IconButton(
+                      onPressed: () => setState(due.clear),
+                      icon: const Icon(Icons.clear),
+                    ),
+            ),
+            onTap: () async {
+              final picked = await showDatePicker(
+                context: context,
+                firstDate: DateTime(2000),
+                lastDate: DateTime.now().add(const Duration(days: 3650)),
+              );
+              if (picked != null) {
+                setState(
+                  () => due.text = picked.toIso8601String().split('T').first,
+                );
+              }
+            },
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Subtasks',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: addSubtask,
+                icon: const Icon(Icons.add),
+                label: const Text('Add'),
+              ),
+            ],
+          ),
+          for (var index = 0; index < subtasks.length; index++)
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              value: subtasks[index]['completed'] == true,
+              title: Text(subtasks[index]['title']),
+              onChanged: (value) =>
+                  setState(() => subtasks[index]['completed'] = value == true),
+              secondary: IconButton(
+                onPressed: () => setState(() => subtasks.removeAt(index)),
+                icon: const Icon(Icons.delete_outline),
+                tooltip: 'Remove subtask',
+              ),
+            ),
           const SizedBox(height: 20),
           FilledButton(
             onPressed: () {
@@ -1919,10 +3862,14 @@ class _TaskSheetState extends State<TaskSheet> {
                   'project': project.text,
                   'taskType': 'personal',
                   'priority': priority,
+                  'description': description.text,
+                  'status': status,
+                  'dueDate': due.text.isEmpty ? null : due.text,
+                  'subtasks': subtasks,
                 });
               }
             },
-            child: const Text('Create task'),
+            child: Text(widget.task == null ? 'Create task' : 'Save task'),
           ),
         ],
       ),
@@ -1931,20 +3878,54 @@ class _TaskSheetState extends State<TaskSheet> {
 }
 
 class BillSheet extends StatefulWidget {
-  const BillSheet({required this.currency, super.key});
+  const BillSheet({required this.currency, this.bill, super.key});
   final String currency;
+  final Map<String, dynamic>? bill;
   @override
   State<BillSheet> createState() => _BillSheetState();
 }
 
 class _BillSheetState extends State<BillSheet> {
-  final key = GlobalKey<FormState>(),
-      name = TextEditingController(),
-      amount = TextEditingController(),
-      due = TextEditingController();
+  final key = GlobalKey<FormState>();
+  late final TextEditingController name,
+      amount,
+      due,
+      category,
+      paymentUrl,
+      reminderDays;
+  String cycle = 'monthly', status = 'unpaid';
+  @override
+  void initState() {
+    super.initState();
+    final bill = widget.bill;
+    name = TextEditingController(text: bill?['name'] ?? '');
+    amount = TextEditingController(text: bill?['amount']?.toString() ?? '');
+    due = TextEditingController(
+      text: bill?['dueDate'] == null ? '' : formatDateOnly(bill?['dueDate']),
+    );
+    category = TextEditingController(text: bill?['category'] ?? 'Other');
+    paymentUrl = TextEditingController(text: bill?['officialPaymentUrl'] ?? '');
+    reminderDays = TextEditingController(
+      text: (bill?['reminderDaysBefore'] as List? ?? const [3, 1]).join(', '),
+    );
+    cycle = bill?['billingCycle'] ?? 'monthly';
+    status = bill?['status'] ?? 'unpaid';
+  }
+
+  @override
+  void dispose() {
+    name.dispose();
+    amount.dispose();
+    due.dispose();
+    category.dispose();
+    paymentUrl.dispose();
+    reminderDays.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => FormSheet(
-    title: 'Add bill reminder',
+    title: widget.bill == null ? 'Add bill reminder' : 'Edit bill reminder',
     child: Form(
       key: key,
       child: Column(
@@ -1956,11 +3937,67 @@ class _BillSheetState extends State<BillSheet> {
           ),
           const SizedBox(height: 12),
           TextFormField(
+            controller: category,
+            decoration: const InputDecoration(labelText: 'Category'),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: cycle,
+            decoration: const InputDecoration(labelText: 'Billing cycle'),
+            items:
+                const ['one_time', 'weekly', 'monthly', 'quarterly', 'yearly']
+                    .map(
+                      (value) => DropdownMenuItem(
+                        value: value,
+                        child: Text(value.replaceAll('_', ' ')),
+                      ),
+                    )
+                    .toList(),
+            onChanged: (value) => cycle = value!,
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: status,
+            decoration: const InputDecoration(labelText: 'Status'),
+            items: const ['unpaid', 'paid', 'overdue', 'skipped']
+                .map(
+                  (value) => DropdownMenuItem(value: value, child: Text(value)),
+                )
+                .toList(),
+            onChanged: (value) => status = value!,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
             controller: amount,
             keyboardType: TextInputType.number,
-            decoration: InputDecoration(labelText: 'Amount (${widget.currency})'),
+            decoration: InputDecoration(
+              labelText: 'Amount (${widget.currency})',
+            ),
             validator: (v) => double.tryParse(v ?? '') == null
                 ? 'Enter a valid amount'
+                : null,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: reminderDays,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Remind days before',
+              hintText: '3, 1',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: paymentUrl,
+            keyboardType: TextInputType.url,
+            decoration: const InputDecoration(
+              labelText: 'Official payment URL (optional)',
+            ),
+            validator: (value) =>
+                value != null &&
+                    value.isNotEmpty &&
+                    !value.startsWith('https://')
+                ? 'Use an HTTPS link'
                 : null,
           ),
           const SizedBox(height: 12),
@@ -1992,11 +4029,19 @@ class _BillSheetState extends State<BillSheet> {
                   'amount': double.parse(amount.text),
                   'currency': widget.currency,
                   'dueDate': due.text,
-                  'category': 'Other',
+                  'category': category.text,
+                  'billingCycle': cycle,
+                  'status': status,
+                  'reminderDaysBefore': reminderDays.text
+                      .split(',')
+                      .map((value) => int.tryParse(value.trim()))
+                      .whereType<int>()
+                      .toList(),
+                  'officialPaymentUrl': paymentUrl.text.trim(),
                 });
               }
             },
-            child: const Text('Save reminder'),
+            child: Text(widget.bill == null ? 'Save reminder' : 'Save changes'),
           ),
         ],
       ),

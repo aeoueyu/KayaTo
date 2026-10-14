@@ -6,6 +6,7 @@ import { ProtectedRoute } from './auth/AuthContext';
 
 const Landing = lazy(() => import('./pages/Landing'));
 const Login = lazy(() => import('./pages/Login'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const Onboarding = lazy(() => import('./pages/Onboarding'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Tasks = lazy(() => import('./pages/Tasks'));
@@ -25,6 +26,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<LazyPage variant="landing"><Landing /></LazyPage>} />
       <Route path="/login" element={<LazyPage variant="auth"><Login /></LazyPage>} />
+      <Route path="/forgot-password" element={<LazyPage variant="auth"><ForgotPassword /></LazyPage>} />
       <Route path="/onboarding" element={<LazyPage variant="auth"><Onboarding /></LazyPage>} />
       <Route path="/app" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
         <Route index element={<LazyPage variant="app"><Dashboard /></LazyPage>} />

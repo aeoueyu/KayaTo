@@ -176,6 +176,7 @@ export default function Login() {
                   />
                   <span>Remember me</span>
                 </label>
+                <Link to="/forgot-password">Forgot password?</Link>
               </div>
 
               <button

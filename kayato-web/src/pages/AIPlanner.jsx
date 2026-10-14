@@ -1,14 +1,53 @@
 import { ArrowRight, Check, FileText, NotebookPen, Sparkles, Upload } from 'lucide-react';
 import { useState } from 'react';
+import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import KayaMascot from '../components/KayaMascot';
 import { api, errorMessage } from '../lib/api';
+
+GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 const MAX_FILE_SIZE_MB = 5;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 const MAX_BRIEF_CHARACTERS = 5_000;
+const MAX_SOURCE_CHARACTERS = 60_000;
 const formatFileSize = (bytes) => bytes < 1024 * 1024
   ? `${Math.max(1, Math.round(bytes / 1024))} KB`
   : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+const isPdfFile = (file) => file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+const cleanImportedText = (value) => value
+  .replace(/\0/g, '')
+  .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
+  .replace(/[^\S\r\n]+/g, ' ')
+  .replace(/ *\n */g, '\n')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim();
+
+async function extractPdfText(file) {
+  const loadingTask = getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+  try {
+    const document = await loadingTask.promise;
+    const pages = [];
+    let extractedCharacters = 0;
+
+    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+      const page = await document.getPage(pageNumber);
+      const content = await page.getTextContent();
+      const pageText = content.items.map((item) => {
+        if (!('str' in item)) return '';
+        return `${item.str}${item.hasEOL ? '\n' : ' '}`;
+      }).join('');
+      pages.push(pageText);
+      extractedCharacters += pageText.length;
+      page.cleanup();
+      if (extractedCharacters >= MAX_SOURCE_CHARACTERS) break;
+    }
+
+    return cleanImportedText(pages.join('\n\n'));
+  } finally {
+    await loadingTask.destroy();
+  }
+}
 
 export default function AIPlanner() {
   const [brief, setBrief] = useState('');
@@ -16,6 +55,7 @@ export default function AIPlanner() {
   const [plan, setPlan] = useState([]);
   const [error, setError] = useState('');
   const [fileNotice, setFileNotice] = useState('');
+  const [fileProcessing, setFileProcessing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -31,31 +71,43 @@ export default function AIPlanner() {
       return;
     }
 
+    setFile(picked);
+    setFileProcessing(true);
     try {
-      const rawText = await picked.text();
-      const readableText = rawText
-        .replace(/\0/g, '')
-        .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
-        .replace(/\r/g, '')
-        .trim();
+      const readableText = isPdfFile(picked)
+        ? await extractPdfText(picked)
+        : cleanImportedText(await picked.text());
       const readableCharacters = readableText.match(/[\p{L}\p{N}]/gu)?.length || 0;
       if (readableCharacters < 20) {
         setFile(null);
         event.target.value = '';
-        setError('This file does not contain enough readable text. Choose another file or paste the project brief below.');
+        setError(isPdfFile(picked)
+          ? 'This PDF has no selectable text. If it is a scanned document, paste its text or use an OCR-readable copy.'
+          : 'This file does not contain enough readable text. Choose another file or paste the project brief below.');
         return;
       }
 
-      const importedText = readableText.slice(0, MAX_BRIEF_CHARACTERS);
-      setFile(picked);
-      setBrief(importedText);
-      setFileNotice(readableText.length > MAX_BRIEF_CHARACTERS
-        ? `Imported the first ${MAX_BRIEF_CHARACTERS.toLocaleString()} characters.`
-        : 'Readable text imported into your brief.');
-    } catch {
+      const sourceText = readableText.slice(0, MAX_SOURCE_CHARACTERS);
+      const { data } = await api.post('/planner/summarize', { text: sourceText });
+      if (typeof data.summary !== 'string' || data.summary.trim().length < 20) {
+        throw new Error('The document summary was empty.');
+      }
+      setBrief(data.summary.trim().slice(0, MAX_BRIEF_CHARACTERS));
+      setPlan([]);
+      setSaved(false);
+      setFileNotice(data.mode === 'gemini'
+        ? `${isPdfFile(picked) ? 'PDF' : 'Document'} summarized into an editable brief.`
+        : `A local summary was created. Review it before generating the plan.`);
+    } catch (requestError) {
       setFile(null);
       event.target.value = '';
-      setError('This file could not be read. Choose another file or paste the project brief below.');
+      setError(requestError?.isAxiosError
+        ? errorMessage(requestError)
+        : isPdfFile(picked)
+          ? 'This PDF could not be read. It may be encrypted, damaged, or use an unsupported format.'
+          : 'This file could not be read. Choose another file or paste the project brief below.');
+    } finally {
+      setFileProcessing(false);
     }
   };
 
@@ -102,9 +154,20 @@ export default function AIPlanner() {
 
       <div className="planner-layout">
         <section className="panel planner-form">
-          <label className={`upload-zone ${file ? 'has-file' : ''}`}>
-            <input type="file" onChange={selectFile} aria-describedby="planner-file-help" />
-            {file ? (
+          <label className={`upload-zone ${file ? 'has-file' : ''}`} aria-busy={fileProcessing}>
+            <input
+              type="file"
+              accept=".pdf,.txt,.md,.markdown,.csv,.json,application/pdf,text/plain,text/markdown,text/csv,application/json"
+              onChange={selectFile}
+              aria-describedby="planner-file-help"
+              disabled={fileProcessing}
+            />
+            {fileProcessing ? (
+              <>
+                <FileText size={22} />
+                <div><b>Summarizing {file?.name || 'document'}...</b><small>Extracting the document and preparing a concise project brief.</small></div>
+              </>
+            ) : file ? (
               <>
                 <FileText size={22} />
                 <div><b>{file.name}</b><small>{formatFileSize(file.size)}, {fileNotice}</small></div>
@@ -113,8 +176,8 @@ export default function AIPlanner() {
             ) : (
               <>
                 <Upload size={24} />
-                <b>Choose any file up to {MAX_FILE_SIZE_MB} MB</b>
-                <small id="planner-file-help">Readable text will be imported into your project brief.</small>
+                <b>Choose a PDF or text file up to {MAX_FILE_SIZE_MB} MB</b>
+                <small id="planner-file-help">PDF, TXT, Markdown, CSV, and JSON text can be imported.</small>
               </>
             )}
           </label>
@@ -129,7 +192,7 @@ export default function AIPlanner() {
             />
           </label>
           {error && <p className="form-error" role="alert">{error}</p>}
-          <button className="button button-primary button-full" disabled={busy || brief.trim().length < 20} onClick={generate}>
+          <button className="button button-primary button-full" disabled={busy || fileProcessing || brief.trim().length < 20} onClick={generate}>
             {busy ? 'Preparing plan...' : <>Generate plan <ArrowRight size={17} /></>}
           </button>
         </section>

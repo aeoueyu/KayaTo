@@ -1,6 +1,6 @@
 import {
   Bell, Check, Eye, EyeOff, Laptop, LogOut, Mail, Monitor, MonitorCog, Moon,
-  Save, Send, ShieldCheck, Smartphone, Sun, UserRound,
+  Save, Send, ShieldCheck, Smartphone, Sun, Trash2, UserRound,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -15,6 +15,7 @@ const sections = [
   { id: 'security', label: 'Password & security', icon: ShieldCheck },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'appearance', label: 'Appearance', icon: MonitorCog },
+  { id: 'danger', label: 'Delete account', icon: Trash2 },
 ];
 
 const notificationOptions = [
@@ -91,6 +92,7 @@ export default function Settings() {
   const [pushConfigStatus, setPushConfigStatus] = useState('loading');
   const [testingNotifications, setTestingNotifications] = useState(false);
   const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [deletion, setDeletion] = useState({ password: '', confirmation: '' });
 
   useEffect(() => {
     if (!user) return;
@@ -208,6 +210,18 @@ export default function Settings() {
     navigate('/login', { replace: true });
   };
 
+  const deleteAccount = async (event) => {
+    event.preventDefault();
+    setBusy(true); setStatus(null);
+    try {
+      await api.delete('/auth/me', { data: deletion });
+      logout();
+      navigate('/', { replace: true });
+    } catch (error) {
+      showStatus('error', errorMessage(error));
+    } finally { setBusy(false); }
+  };
+
   const rules = [
     ['8 to 64 characters', passwords.newPassword.length >= 8 && passwords.newPassword.length <= 64],
     ['One uppercase letter', /[A-Z]/.test(passwords.newPassword)],
@@ -321,6 +335,16 @@ export default function Settings() {
             <header><div className="settings-section-icon"><MonitorCog size={21} /></div><div><h2>Appearance</h2><p>Select how KayaTo looks on this device.</p></div></header>
             <div className="settings-section-body"><fieldset className="appearance-options"><legend>Color theme</legend>{themeOptions.map(({ value, label, description, icon: Icon }) => <label key={value} className={themePreference === value ? 'selected' : ''}><input type="radio" name="theme" value={value} checked={themePreference === value} onChange={() => setThemePreference(value)} /><Icon size={20} /><span><strong>{label}</strong><small>{description}</small></span><span className="theme-radio" aria-hidden="true">{themePreference === value && <Check size={13} />}</span></label>)}</fieldset><p className="appearance-note">Your theme choice is saved in this browser and applied immediately.</p></div>
           </section>}
+
+          {activeSection === 'danger' && <form className="settings-section" onSubmit={deleteAccount}>
+            <header><div className="settings-section-icon"><Trash2 size={21} /></div><div><h2>Delete account</h2><p>Permanently remove your KayaTo account and personal data.</p></div></header>
+            <div className="settings-section-body security-fields">
+              <p>This cannot be undone. Teams you own with other members must be transferred or cleared first.</p>
+              <PasswordInput id="delete-account-password" label="Current password" value={deletion.password} onChange={(event) => setDeletion({ ...deletion, password: event.target.value })} autoComplete="current-password" />
+              <label className="field-label"><span>Type DELETE to confirm <b className="required-mark">*</b></span><input value={deletion.confirmation} onChange={(event) => setDeletion({ ...deletion, confirmation: event.target.value })} autoComplete="off" required /></label>
+            </div>
+            <footer><small className="settings-action-note">Your tasks, bills, friendships, and direct chats will be removed.</small><button className="button logout-confirm" disabled={busy || !deletion.password || deletion.confirmation !== 'DELETE'}><Trash2 size={16} />{busy ? 'Deleting...' : 'Permanently delete account'}</button></footer>
+          </form>}
         </div>
       </div>
 
