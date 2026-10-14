@@ -21,7 +21,7 @@ export default function Team() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [createForm, setCreateForm] = useState({ name: '', description: '' });
-  const [invite, setInvite] = useState({ team: '', email: '', role: 'member' });
+  const [invite, setInvite] = useState({ team: '', identifier: '', role: 'member' });
   const [busy, setBusy] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState(null);
 
@@ -70,6 +70,7 @@ export default function Team() {
       const { data } = await api.post('/teams', { name, description });
       setTeams((current) => [data, ...current]);
       setCreateForm({ name: '', description: '' });
+      window.dispatchEvent(new Event('kayato:teams-changed'));
       setMessage('Team created.');
     } catch (requestError) {
       setError(errorMessage(requestError));
@@ -83,11 +84,12 @@ export default function Team() {
     setBusy(true); setError(''); setMessage('');
     try {
       const { data } = await api.post(`/teams/${invite.team}/members`, {
-        email: invite.email.trim(),
+        identifier: invite.identifier.trim(),
         role: invite.role,
       });
       replaceTeam(data);
-      setInvite({ team: '', email: '', role: 'member' });
+      setInvite({ team: '', identifier: '', role: 'member' });
+      window.dispatchEvent(new Event('kayato:teams-changed'));
       setMessage('Member added to the team.');
     } catch (requestError) {
       setError(errorMessage(requestError));
@@ -116,7 +118,7 @@ export default function Team() {
         <form className="panel compact-form" onSubmit={add}>
           <div className="panel-heading"><div><h2>Add a member</h2><span>Owners and managers can invite</span></div><UserPlus size={19} /></div>
           <label className="field-label">Team<select required value={invite.team} onChange={(event) => setInvite({ ...invite, team: event.target.value, role: 'member' })}><option value="">Select team</option>{manageableTeams.map((team) => <option value={team._id} key={team._id}>{team.name}</option>)}</select></label>
-          <label className="field-label">Member email<input type="email" required value={invite.email} onChange={(event) => setInvite({ ...invite, email: event.target.value })} /></label>
+          <label className="field-label">Username or email<input required value={invite.identifier} onChange={(event) => setInvite({ ...invite, identifier: event.target.value })} placeholder="@username or name@example.com" autoComplete="off" /></label>
           <label className="field-label">Access<select value={invite.role} onChange={(event) => setInvite({ ...invite, role: event.target.value })}><option value="member">Can edit</option><option value="viewer">View only</option>{canInviteManager && <option value="manager">Manager</option>}</select></label>
           <button className="button button-secondary" disabled={busy || manageableTeams.length === 0}>Add member</button>
         </form>
@@ -265,7 +267,7 @@ function TeamManager({ team, currentUserId, onClose, onUpdated }) {
             {selectedMember && isOwner && (
               <section className="member-actions-panel">
                 <div><h3>{selectedMember.user?.displayName}</h3><p>Choose the access this member should have.</p></div>
-                <label className="field-label">Member access<select value={memberRole} onChange={(event) => { setMemberRole(event.target.value); setConfirmation(null); }}><option value="manager">Manager — manage team</option><option value="member">Can edit — update team tasks</option><option value="viewer">View only — no task changes</option></select><small>{roleDetails[memberRole]?.description}</small></label>
+                <label className="field-label">Member access<select value={memberRole} onChange={(event) => { setMemberRole(event.target.value); setConfirmation(null); }}><option value="manager">Manager: manage team</option><option value="member">Can edit: update team tasks</option><option value="viewer">View only: no task changes</option></select><small>{roleDetails[memberRole]?.description}</small></label>
                 {!confirmation ? (
                   <div className="member-action-buttons">
                     <button type="button" className="button button-primary" disabled={memberRole === selectedMember.role} onClick={() => setConfirmation({ type: 'role', role: memberRole })}>Review role change</button>

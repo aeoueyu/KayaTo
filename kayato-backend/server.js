@@ -333,8 +333,8 @@ async function getManageableTeam(teamId, userId) {
   });
 }
 const populatedTeam = (team) => team.populate([
-  { path: 'owner', select: 'displayName email' },
-  { path: 'members.user', select: 'displayName email' },
+  { path: 'owner', select: 'displayName username email' },
+  { path: 'members.user', select: 'displayName username email' },
 ]);
 const populatedTask = (task) => task.populate([
   { path: 'creator', select: 'displayName email' },
@@ -614,6 +614,7 @@ const aiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeade
 const kayaLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false, skip: (req) => !/@kaya\b/i.test(String(req.body.content || '')), message: { message: 'Too many Kaya requests. Try again in a few minutes.' } });
 const searchLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 120, standardHeaders: 'draft-8', legacyHeaders: false, message: { message: 'Too many searches. Try again in a few minutes.' } });
 const pushLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false, message: { message: 'Too many notification requests. Try again in a few minutes.' } });
+const passwordVerificationLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false, message: { message: 'Too many password attempts. Try again in 15 minutes.' } });
 let reminderSweepPromise;
 const zonedDayNumber = (date, timeZone = 'Asia/Manila') => {
   let parts;
@@ -864,7 +865,18 @@ app.patch('/api/auth/me', requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.post('/api/auth/change-password', requireAuth, async (req, res, next) => {
+app.post('/api/auth/verify-password', requireAuth, passwordVerificationLimiter, async (req, res, next) => {
+  try {
+    const currentPassword = String(req.body.currentPassword || '');
+    if (!currentPassword) return res.status(400).json({ message: 'Enter your current password.' });
+    const user = await User.findById(req.user.id).select('+passwordHash');
+    if (!user) return res.status(404).json({ message: 'Account not found.' });
+    if (!(await bcrypt.compare(currentPassword, user.passwordHash))) return res.status(400).json({ message: 'Your current password is incorrect.' });
+    res.json({ verified: true });
+  } catch (error) { next(error); }
+});
+
+app.post('/api/auth/change-password', requireAuth, passwordVerificationLimiter, async (req, res, next) => {
   try {
     const currentPassword = String(req.body.currentPassword || '');
     const newPassword = String(req.body.newPassword || '');
@@ -1141,8 +1153,8 @@ app.delete('/api/bills/:id', requireAuth, async (req, res, next) => { try { cons
 app.get('/api/teams', requireAuth, async (req, res, next) => {
   try {
     res.json(await Team.find({ 'members.user': req.user.id })
-      .populate('owner', 'displayName email')
-      .populate('members.user', 'displayName email')
+      .populate('owner', 'displayName username email')
+      .populate('members.user', 'displayName username email')
       .sort({ updatedAt: -1 }));
   } catch (error) { next(error); }
 });
@@ -1199,7 +1211,17 @@ app.post('/api/teams/:id/members', requireAuth, async (req, res, next) => {
   try {
     const team = await getManageableTeam(req.params.id, req.user.id);
     if (!team) return res.status(403).json({ message: 'Only a team owner or manager can add members.' });
-    const user = await User.findOne({ email: normalizeEmail(req.body.email) }); if (!user) return res.status(404).json({ message: 'No KayaTo account uses that email address.' });
+    const rawIdentifier = String(req.body.identifier || req.body.username || req.body.email || '').trim();
+    if (!rawIdentifier) return res.status(400).json({ message: 'Enter a username or email address.' });
+    const normalizedUsername = normalizeUsername(rawIdentifier.replace(/^@/, ''));
+    const normalizedEmail = normalizeEmail(rawIdentifier);
+    const user = await User.findOne({
+      $or: [
+        ...(normalizedUsername ? [{ username: normalizedUsername }] : []),
+        ...(normalizedEmail.includes('@') ? [{ email: normalizedEmail }] : []),
+      ],
+    });
+    if (!user) return res.status(404).json({ message: 'No KayaTo account matches that username or email.' });
     if (team.members.some((member) => String(member.user) === String(user._id))) return res.status(409).json({ message: 'This person is already a team member.' });
     const role = req.body.role || 'member';
     if (!['manager', 'member', 'viewer'].includes(role)) return res.status(400).json({ message: 'Select a valid member role.' });

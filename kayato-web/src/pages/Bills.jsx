@@ -6,6 +6,7 @@ import { api, errorMessage } from '../lib/api';
 import { currencyLabel, formatCalendarDate, formatCurrency, normalizeCurrency } from '../lib/formatters';
 
 const initial = { name: '', category: 'Utilities', amount: '', dueDate: '', billingCycle: 'monthly', officialPaymentUrl: '' };
+const billCategories = ['Utilities', 'Internet', 'Mobile', 'Rent', 'Subscription', 'Insurance', 'Loan', 'Education', 'Healthcare', 'Transportation', 'Other'];
 const date = (value) => formatCalendarDate(value, { month: 'short', day: 'numeric', year: 'numeric' });
 
 export default function Bills() {
@@ -92,7 +93,7 @@ function BillForm({ currency, onClose, onCreated }) {
   return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}>
     <div className="modal-head"><div><h2>Add bill reminder</h2><p>KayaTo never processes payments.</p></div><button type="button" onClick={onClose}>×</button></div>
     {error && <p className="form-error">{error}</p>}
-    <div className="form-grid"><label className="field-label">Biller name<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><label className="field-label">Category<input value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} /></label><label className="field-label">Amount ({currency})<input type="number" min="0" step="0.01" required value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} /></label><label className="field-label">Due date<input type="date" required value={form.dueDate} onChange={(event) => setForm({ ...form, dueDate: event.target.value })} /></label></div>
+    <div className="form-grid"><label className="field-label">Biller name<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><label className="field-label">Category<select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>{billCategories.map((category) => <option value={category} key={category}>{category}</option>)}</select></label><label className="field-label">Amount ({currency})<input type="number" min="0" step="0.01" required value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} /></label><label className="field-label">Due date<input type="date" required value={form.dueDate} onChange={(event) => setForm({ ...form, dueDate: event.target.value })} /></label></div>
     <label className="field-label">Official payment URL (optional)<input type="url" placeholder="https://" value={form.officialPaymentUrl} onChange={(event) => setForm({ ...form, officialPaymentUrl: event.target.value })} /></label>
     <div className="modal-actions"><button type="button" className="button button-secondary" onClick={onClose}>Cancel</button><button className="button button-primary" disabled={busy}>{busy ? 'Saving...' : 'Save reminder'}</button></div>
   </form></div>;

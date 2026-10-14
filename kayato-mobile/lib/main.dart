@@ -1,11 +1,14 @@
 import 'dart:convert';
 import 'dart:async';
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
+import 'package:pdfrx/pdfrx.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'kayato_toast.dart';
 
@@ -20,6 +23,20 @@ final nameInputFormatters = <TextInputFormatter>[
   }),
   LengthLimitingTextInputFormatter(40),
 ];
+
+const kayaRuby = Color(0xFF70000E);
+const kayaInk = Color(0xFF2C2929);
+const kayaPearl = Color(0xFFF5F4F2);
+const kayaRaised = Color(0xFFFCFBFA);
+const kayaBorder = Color(0xFFD0C9C5);
+const kayaMuted = Color(0xFF655D5D);
+const kayaSuccess = Color(0xFF2A6F62);
+const kayaWarning = Color(0xFFA45100);
+const kayaWebUrl = String.fromEnvironment(
+  'WEB_URL',
+  defaultValue: 'https://kaya-to.vercel.app',
+);
+
 bool emailSyntaxIsValid(String value) => RegExp(
   r'^[^\s@]+@(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$',
 ).hasMatch(value.trim());
@@ -353,18 +370,37 @@ class _KayaToAppState extends State<KayaToApp> with WidgetsBindingObserver {
     themeMode: mode,
     theme: _theme(false),
     darkTheme: _theme(true),
-    builder: (context, child) => KayaToaster(
-      child: Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerDown: (_) => unawaited(_recordActivity()),
-        onPointerMove: (_) => unawaited(_recordActivity()),
-        child: child!,
+    builder: (context, child) => DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: Theme.of(context).brightness == Brightness.dark
+              ? const [Color(0xFF030303), Color(0xFF100D0E)]
+              : const [kayaPearl, Color(0xFFEBE7E4)],
+        ),
+      ),
+      child: KayaToaster(
+        child: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) => unawaited(_recordActivity()),
+          onPointerMove: (_) => unawaited(_recordActivity()),
+          child: child!,
+        ),
       ),
     ),
     home: loading
         ? const Scaffold(body: Center(child: CircularProgressIndicator()))
         : user == null
-        ? AuthScreen(api: api, onSuccess: signedIn)
+        ? AuthScreen(
+            api: api,
+            onSuccess: signedIn,
+            onTheme: () => setState(
+              () => mode = mode == ThemeMode.dark
+                  ? ThemeMode.light
+                  : ThemeMode.dark,
+            ),
+          )
         : HomeScreen(
             api: api,
             user: user!,
@@ -380,54 +416,235 @@ class _KayaToAppState extends State<KayaToApp> with WidgetsBindingObserver {
 }
 
 ThemeData _theme(bool dark) {
-  const ruby = Color(0xFF70000E);
-  final scheme = ColorScheme.fromSeed(
-    seedColor: ruby,
+  final baseScheme = ColorScheme.fromSeed(
+    seedColor: kayaRuby,
     brightness: dark ? Brightness.dark : Brightness.light,
-    primary: dark ? const Color(0xFFFF8A99) : ruby,
-    surface: dark ? const Color(0xFF171515) : const Color(0xFFF5F4F2),
-    error: dark ? const Color(0xFFFF8A99) : ruby,
   );
-  return ThemeData(
+  final scheme = baseScheme.copyWith(
+    primary: dark ? const Color(0xFFD45A68) : kayaRuby,
+    onPrimary: kayaPearl,
+    secondary: dark ? const Color(0xFFC3B79D) : kayaInk,
+    onSecondary: dark ? const Color(0xFF171515) : kayaPearl,
+    tertiary: dark ? const Color(0xFF69B8A8) : kayaSuccess,
+    surface: dark ? const Color(0xFF171515) : kayaRaised,
+    surfaceContainerLowest: dark ? const Color(0xFF171515) : kayaRaised,
+    surfaceContainerLow: dark
+        ? const Color(0xFF242020)
+        : const Color(0xFFF0ECE9),
+    surfaceContainer: dark ? const Color(0xFF2C2929) : const Color(0xFFE9E5E2),
+    surfaceContainerHigh: dark
+        ? const Color(0xFF353131)
+        : const Color(0xFFE2DDDA),
+    onSurface: dark ? kayaPearl : kayaInk,
+    onSurfaceVariant: dark ? const Color(0xFFDCD7D4) : kayaMuted,
+    outline: dark ? const Color(0xFF5B5555) : kayaBorder,
+    outlineVariant: dark ? const Color(0xFF4B4646) : kayaBorder,
+    error: dark ? const Color(0xFFE26F7D) : kayaRuby,
+  );
+  final theme = ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
-    scaffoldBackgroundColor: dark
-        ? const Color(0xFF030303)
-        : const Color(0xFFF5F4F2),
+    scaffoldBackgroundColor: Colors.transparent,
+    canvasColor: scheme.surface,
+    dividerColor: scheme.outlineVariant,
+    splashFactory: InkSparkle.splashFactory,
+    appBarTheme: AppBarTheme(
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: false,
+      backgroundColor: scheme.surface.withValues(alpha: 0.96),
+      foregroundColor: scheme.onSurface,
+      surfaceTintColor: Colors.transparent,
+      titleTextStyle: TextStyle(
+        color: scheme.onSurface,
+        fontSize: 18,
+        fontWeight: FontWeight.w800,
+        letterSpacing: -0.35,
+      ),
+      shape: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+    ),
     cardTheme: CardThemeData(
       elevation: 0,
+      color: scheme.surface,
+      surfaceTintColor: Colors.transparent,
+      margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(14),
         side: BorderSide(color: scheme.outlineVariant),
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
+      fillColor: scheme.surface,
+      labelStyle: TextStyle(color: scheme.onSurfaceVariant),
+      floatingLabelStyle: TextStyle(
+        color: scheme.primary,
+        fontWeight: FontWeight.w700,
+      ),
+      hintStyle: TextStyle(color: scheme.onSurfaceVariant),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: scheme.outlineVariant),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: scheme.primary, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: scheme.error),
+      ),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: scheme.outlineVariant),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         minimumSize: const Size(48, 52),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: scheme.primary,
+        foregroundColor: scheme.onPrimary,
+        disabledBackgroundColor: scheme.surfaceContainerHigh,
+        disabledForegroundColor: scheme.onSurfaceVariant,
+        elevation: 0,
+        textStyle: const TextStyle(fontWeight: FontWeight.w800),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(48, 48),
+        foregroundColor: scheme.onSurface,
+        side: BorderSide(color: scheme.outlineVariant),
+        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: scheme.primary,
+        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    ),
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      elevation: 2,
+      highlightElevation: 1,
+      backgroundColor: scheme.primary,
+      foregroundColor: scheme.onPrimary,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    ),
+    iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom(
+        minimumSize: const Size.square(44),
+        foregroundColor: scheme.onSurfaceVariant,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    ),
+    listTileTheme: ListTileThemeData(
+      iconColor: scheme.onSurfaceVariant,
+      textColor: scheme.onSurface,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      minVerticalPadding: 12,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ),
+    chipTheme: ChipThemeData(
+      side: BorderSide(color: scheme.outlineVariant),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+      labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: scheme.surface,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: scheme.surface,
+      surfaceTintColor: Colors.transparent,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+    ),
+    progressIndicatorTheme: ProgressIndicatorThemeData(
+      color: scheme.primary,
+      linearTrackColor: scheme.surfaceContainerHigh,
+    ),
     navigationBarTheme: NavigationBarThemeData(
-      height: 72,
+      height: 70,
+      elevation: 0,
+      backgroundColor: scheme.surface.withValues(alpha: 0.98),
+      surfaceTintColor: Colors.transparent,
+      indicatorColor: dark ? const Color(0xFF35181B) : const Color(0xFFF1E2E3),
       indicatorShape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      labelTextStyle: WidgetStateProperty.resolveWith(
+        (states) => TextStyle(
+          color: states.contains(WidgetState.selected)
+              ? scheme.primary
+              : scheme.onSurfaceVariant,
+          fontSize: 11,
+          fontWeight: states.contains(WidgetState.selected)
+              ? FontWeight.w800
+              : FontWeight.w600,
+        ),
+      ),
+      iconTheme: WidgetStateProperty.resolveWith(
+        (states) => IconThemeData(
+          color: states.contains(WidgetState.selected)
+              ? scheme.primary
+              : scheme.onSurfaceVariant,
+          size: 22,
+        ),
+      ),
+    ),
+  );
+  return theme.copyWith(
+    textTheme: theme.textTheme.copyWith(
+      headlineLarge: theme.textTheme.headlineLarge?.copyWith(
+        fontWeight: FontWeight.w800,
+        letterSpacing: -1.1,
+        height: 1.12,
+      ),
+      headlineMedium: theme.textTheme.headlineMedium?.copyWith(
+        fontWeight: FontWeight.w800,
+        letterSpacing: -0.8,
+        height: 1.15,
+      ),
+      headlineSmall: theme.textTheme.headlineSmall?.copyWith(
+        fontWeight: FontWeight.w800,
+        letterSpacing: -0.55,
+        height: 1.18,
+      ),
+      titleLarge: theme.textTheme.titleLarge?.copyWith(
+        fontWeight: FontWeight.w800,
+        letterSpacing: -0.35,
+      ),
+      titleMedium: theme.textTheme.titleMedium?.copyWith(
+        fontWeight: FontWeight.w700,
+      ),
+      bodyLarge: theme.textTheme.bodyLarge?.copyWith(height: 1.5),
+      bodyMedium: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+      labelLarge: theme.textTheme.labelLarge?.copyWith(
+        fontWeight: FontWeight.w800,
       ),
     ),
   );
 }
 
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({required this.api, required this.onSuccess, super.key});
+  const AuthScreen({
+    required this.api,
+    required this.onSuccess,
+    required this.onTheme,
+    super.key,
+  });
   final ApiClient api;
   final ValueChanged<Map<String, dynamic>> onSuccess;
+  final VoidCallback onTheme;
   @override
   State<AuthScreen> createState() => _AuthScreenState();
 }
@@ -602,384 +819,557 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Form(
-                  key: formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primary,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Text(
-                          'K',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.onPrimary,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        register
-                            ? awaitingCode
-                                  ? 'Verify your email'
-                                  : 'Create your KayaTo account'
-                            : 'Welcome back',
-                        style: Theme.of(context).textTheme.headlineMedium
-                            ?.copyWith(fontWeight: FontWeight.w800),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        register
-                            ? awaitingCode
-                                  ? 'Enter the 6-digit code sent to ${email.text}.'
-                                  : 'Organize personal and team work in one place.'
-                            : 'Continue where you left off.',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      if (error != null) ErrorBox(error!),
-                      if (register && awaitingCode) ...[
-                        const Text(
-                          'Verification code *',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: List.generate(6, (index) {
-                            return Expanded(
-                              child: Padding(
-                                padding: EdgeInsets.only(
-                                  right: index == 5 ? 0 : 6,
-                                ),
-                                child: Semantics(
-                                  label:
-                                      'Verification code digit ${index + 1} of 6',
-                                  textField: true,
-                                  child: TextFormField(
-                                    controller: otpControllers[index],
-                                    focusNode: otpFocusNodes[index],
-                                    autofocus: index == 0,
-                                    keyboardType: TextInputType.number,
-                                    textInputAction: index == 5
-                                        ? TextInputAction.done
-                                        : TextInputAction.next,
-                                    autofillHints: index == 0
-                                        ? const [AutofillHints.oneTimeCode]
-                                        : null,
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.digitsOnly,
-                                    ],
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                    decoration: const InputDecoration(
-                                      counterText: '',
-                                      contentPadding: EdgeInsets.symmetric(
-                                        vertical: 16,
-                                      ),
-                                    ),
-                                    validator: index == 0
-                                        ? (_) =>
-                                              !RegExp(
-                                                r'^\d{6}$',
-                                              ).hasMatch(code.text)
-                                              ? 'Enter all 6 digits'
-                                              : null
-                                        : null,
-                                    onChanged: (value) =>
-                                        enterOtpDigits(index, value),
-                                    onFieldSubmitted: index == 5
-                                        ? (_) => submit()
-                                        : (_) => otpFocusNodes[index + 1]
-                                              .requestFocus(),
-                                  ),
-                                ),
-                              ),
-                            );
-                          }),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Enter the six digits from your KayaTo email.',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                              ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextButton(
-                          onPressed: busy
-                              ? null
-                              : () => setState(() {
-                                  awaitingCode = false;
-                                  clearOtp();
-                                  error = null;
-                                }),
-                          child: const Text('Change email or account details'),
-                        ),
-                      ] else ...[
-                        if (register) ...[
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextFormField(
-                                  controller: firstName,
-                                  textInputAction: TextInputAction.next,
-                                  autofillHints: const [
-                                    AutofillHints.givenName,
-                                  ],
-                                  textCapitalization: TextCapitalization.words,
-                                  inputFormatters: nameInputFormatters,
-                                  decoration: const InputDecoration(
-                                    labelText: 'First name *',
-                                  ),
-                                  validator: (v) => (v ?? '').trim().length < 2
-                                      ? 'Enter first name'
-                                      : null,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: TextFormField(
-                                  controller: lastName,
-                                  textInputAction: TextInputAction.next,
-                                  autofillHints: const [
-                                    AutofillHints.familyName,
-                                  ],
-                                  textCapitalization: TextCapitalization.words,
-                                  inputFormatters: nameInputFormatters,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Last name *',
-                                  ),
-                                  validator: (v) => (v ?? '').trim().length < 2
-                                      ? 'Enter last name'
-                                      : null,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'Letters, spaces, periods, and hyphens only.',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                                  ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                        Focus(
-                          onFocusChange: (focused) {
-                            if (!focused && register && !awaitingCode) {
-                              validateEmailDomain();
-                            }
-                          },
-                          child: TextFormField(
-                            controller: email,
-                            keyboardType: TextInputType.emailAddress,
-                            textInputAction: TextInputAction.next,
-                            autofillHints: const [AutofillHints.email],
-                            decoration: InputDecoration(
-                              labelText: 'Email address *',
-                              errorText: emailDomainError,
-                              suffixIcon: emailChecking
-                                  ? const Padding(
-                                      padding: EdgeInsets.all(14),
-                                      child: SizedBox.square(
-                                        dimension: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      ),
-                                    )
-                                  : null,
-                            ),
-                            onChanged: (_) => setState(() {
-                              emailValidationSequence += 1;
-                              emailDomainError = null;
-                              emailChecking = false;
-                            }),
-                            validator: (v) =>
-                                !emailSyntaxIsValid((v ?? '').trim())
-                                ? 'Enter a complete email address'
-                                : null,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Focus(
-                          onFocusChange: (focused) =>
-                              setState(() => passwordFocused = focused),
-                          child: TextFormField(
-                            controller: password,
-                            obscureText: hidden,
-                            autofillHints: [
-                              register
-                                  ? AutofillHints.newPassword
-                                  : AutofillHints.password,
-                            ],
-                            decoration: InputDecoration(
-                              labelText: 'Password *',
-                              suffixIcon: IconButton(
-                                onPressed: () =>
-                                    setState(() => hidden = !hidden),
-                                icon: Icon(
-                                  hidden
-                                      ? Icons.visibility_outlined
-                                      : Icons.visibility_off_outlined,
-                                ),
-                              ),
-                            ),
-                            onChanged: register ? (_) => setState(() {}) : null,
-                            validator: (v) => register && !strongPassword
-                                ? 'Complete all password requirements'
-                                : (v ?? '').length < 8
-                                ? 'Use at least 8 characters'
-                                : null,
-                            onFieldSubmitted: register ? null : (_) => submit(),
-                          ),
-                        ),
-                        if (register && passwordFocused) ...[
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 12,
-                            runSpacing: 8,
-                            children: [
-                              PasswordRule(
-                                label: 'At least 8 characters',
-                                met: password.text.length >= 8,
-                              ),
-                              PasswordRule(
-                                label: 'One uppercase letter',
-                                met: RegExp(r'[A-Z]').hasMatch(password.text),
-                              ),
-                              PasswordRule(
-                                label: 'One lowercase letter',
-                                met: RegExp(r'[a-z]').hasMatch(password.text),
-                              ),
-                              PasswordRule(
-                                label: 'One number',
-                                met: RegExp(r'\d').hasMatch(password.text),
-                              ),
-                              PasswordRule(
-                                label: 'One symbol',
-                                met: RegExp(
-                                  r'[^A-Za-z0-9]',
-                                ).hasMatch(password.text),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: confirmPassword,
-                            obscureText: confirmHidden,
-                            autofillHints: const [AutofillHints.newPassword],
-                            decoration: InputDecoration(
-                              labelText: 'Confirm password *',
-                              suffixIcon: IconButton(
-                                onPressed: () => setState(
-                                  () => confirmHidden = !confirmHidden,
-                                ),
-                                tooltip: confirmHidden
-                                    ? 'Show confirmed password'
-                                    : 'Hide confirmed password',
-                                icon: Icon(
-                                  confirmHidden
-                                      ? Icons.visibility_outlined
-                                      : Icons.visibility_off_outlined,
-                                ),
-                              ),
-                            ),
-                            validator: (v) => v != password.text
-                                ? 'Passwords do not match'
-                                : null,
-                            onFieldSubmitted: (_) => submit(),
-                          ),
-                        ],
+    body: Stack(
+      children: [
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: Theme.of(context).brightness == Brightness.dark
+                    ? const [
+                        Color(0xFF080707),
+                        Color(0xFF160D10),
+                        Color(0xFF09090F),
+                      ]
+                    : const [
+                        Color(0xFFFDFBFC),
+                        Color(0xFFF5EDF0),
+                        Color(0xFFF1F3FB),
                       ],
-                      const SizedBox(height: 20),
-                      FilledButton(
-                        onPressed: busy || emailChecking ? null : submit,
-                        child: Text(
-                          busy
-                              ? awaitingCode
-                                    ? 'Verifying...'
-                                    : 'Please wait...'
-                              : register
-                              ? awaitingCode
-                                    ? 'Verify and create account'
-                                    : 'Send verification code'
-                              : 'Log in',
-                        ),
-                      ),
-                      if (!register && !awaitingCode)
-                        TextButton(
-                          onPressed: busy
-                              ? null
-                              : () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => PasswordResetScreen(
-                                      api: widget.api,
-                                      initialEmail: email.text,
-                                    ),
-                                  ),
-                                ),
-                          child: const Text('Forgot password?'),
-                        ),
-                      TextButton(
-                        onPressed: busy
-                            ? null
-                            : () => setState(() {
-                                register = !register;
-                                awaitingCode = false;
-                                passwordFocused = false;
-                                emailChecking = false;
-                                emailDomainError = null;
-                                emailValidationSequence += 1;
-                                clearOtp();
-                                error = null;
-                              }),
-                        child: Text(
-                          register
-                              ? 'Already have an account? Log in'
-                              : 'New to KayaTo? Create an account',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                stops: const [0, .52, 1],
               ),
             ),
           ),
         ),
+        const Positioned(
+          top: -110,
+          right: -100,
+          child: AuthGlow(color: Color(0xFF9B1023), size: 300),
+        ),
+        const Positioned(
+          bottom: -120,
+          left: -100,
+          child: AuthGlow(color: Color(0xFF7257D8), size: 280),
+        ),
+        SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 10, 14, 6),
+                child: Row(
+                  children: [
+                    const KayaBrandLockup(),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: widget.onTheme,
+                      tooltip: 'Switch theme',
+                      icon: const Icon(Icons.contrast_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 430),
+                      child: Card(
+                        elevation: 18,
+                        shadowColor: Colors.black.withValues(alpha: .18),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surface.withValues(alpha: .94),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          side: BorderSide(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.outlineVariant.withValues(alpha: .82),
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(22, 26, 22, 22),
+                          child: Form(
+                            key: formKey,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                const Align(
+                                  alignment: Alignment.center,
+                                  child: KayaBrandIcon(),
+                                ),
+                                const SizedBox(height: 18),
+                                Text(
+                                  register
+                                      ? awaitingCode
+                                            ? 'Verify your email'
+                                            : 'Create your KayaTo account'
+                                      : 'Continue to KayaTo',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineMedium
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 30,
+                                        letterSpacing: -1.2,
+                                      ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  register
+                                      ? awaitingCode
+                                            ? 'Enter the 6-digit code sent to ${email.text}.'
+                                            : 'Organize personal and team work in one place.'
+                                      : 'Sign in to keep your projects, plans, and conversations moving.',
+                                  style: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                    height: 1.5,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 24),
+                                if (error != null) ErrorBox(error!),
+                                if (register && awaitingCode) ...[
+                                  const Text(
+                                    'Verification code *',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: List.generate(6, (index) {
+                                      return Expanded(
+                                        child: Padding(
+                                          padding: EdgeInsets.only(
+                                            right: index == 5 ? 0 : 6,
+                                          ),
+                                          child: Semantics(
+                                            label:
+                                                'Verification code digit ${index + 1} of 6',
+                                            textField: true,
+                                            child: TextFormField(
+                                              controller: otpControllers[index],
+                                              focusNode: otpFocusNodes[index],
+                                              autofocus: index == 0,
+                                              keyboardType:
+                                                  TextInputType.number,
+                                              textInputAction: index == 5
+                                                  ? TextInputAction.done
+                                                  : TextInputAction.next,
+                                              autofillHints: index == 0
+                                                  ? const [
+                                                      AutofillHints.oneTimeCode,
+                                                    ]
+                                                  : null,
+                                              inputFormatters: [
+                                                FilteringTextInputFormatter
+                                                    .digitsOnly,
+                                              ],
+                                              textAlign: TextAlign.center,
+                                              style: const TextStyle(
+                                                fontSize: 20,
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                              decoration: const InputDecoration(
+                                                counterText: '',
+                                                contentPadding:
+                                                    EdgeInsets.symmetric(
+                                                      vertical: 16,
+                                                    ),
+                                              ),
+                                              validator: index == 0
+                                                  ? (_) =>
+                                                        !RegExp(
+                                                          r'^\d{6}$',
+                                                        ).hasMatch(code.text)
+                                                        ? 'Enter all 6 digits'
+                                                        : null
+                                                  : null,
+                                              onChanged: (value) =>
+                                                  enterOtpDigits(index, value),
+                                              onFieldSubmitted: index == 5
+                                                  ? (_) => submit()
+                                                  : (_) =>
+                                                        otpFocusNodes[index + 1]
+                                                            .requestFocus(),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Enter the six digits from your KayaTo email.',
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  TextButton(
+                                    onPressed: busy
+                                        ? null
+                                        : () => setState(() {
+                                            awaitingCode = false;
+                                            clearOtp();
+                                            error = null;
+                                          }),
+                                    child: const Text(
+                                      'Change email or account details',
+                                    ),
+                                  ),
+                                ] else ...[
+                                  if (register) ...[
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: TextFormField(
+                                            controller: firstName,
+                                            textInputAction:
+                                                TextInputAction.next,
+                                            autofillHints: const [
+                                              AutofillHints.givenName,
+                                            ],
+                                            textCapitalization:
+                                                TextCapitalization.words,
+                                            inputFormatters:
+                                                nameInputFormatters,
+                                            decoration: const InputDecoration(
+                                              labelText: 'First name *',
+                                            ),
+                                            validator: (v) =>
+                                                (v ?? '').trim().length < 2
+                                                ? 'Enter first name'
+                                                : null,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: TextFormField(
+                                            controller: lastName,
+                                            textInputAction:
+                                                TextInputAction.next,
+                                            autofillHints: const [
+                                              AutofillHints.familyName,
+                                            ],
+                                            textCapitalization:
+                                                TextCapitalization.words,
+                                            inputFormatters:
+                                                nameInputFormatters,
+                                            decoration: const InputDecoration(
+                                              labelText: 'Last name *',
+                                            ),
+                                            validator: (v) =>
+                                                (v ?? '').trim().length < 2
+                                                ? 'Enter last name'
+                                                : null,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        'Letters, spaces, periods, and hyphens only.',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                  Focus(
+                                    onFocusChange: (focused) {
+                                      if (!focused &&
+                                          register &&
+                                          !awaitingCode) {
+                                        validateEmailDomain();
+                                      }
+                                    },
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const AuthFieldLabel('Email address'),
+                                        const SizedBox(height: 8),
+                                        TextFormField(
+                                          controller: email,
+                                          keyboardType:
+                                              TextInputType.emailAddress,
+                                          textInputAction: TextInputAction.next,
+                                          autofillHints: const [
+                                            AutofillHints.email,
+                                          ],
+                                          decoration: InputDecoration(
+                                            hintText: 'name@example.com',
+                                            errorText: emailDomainError,
+                                            suffixIcon: emailChecking
+                                                ? const Padding(
+                                                    padding: EdgeInsets.all(14),
+                                                    child: SizedBox.square(
+                                                      dimension: 18,
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                            strokeWidth: 2,
+                                                          ),
+                                                    ),
+                                                  )
+                                                : null,
+                                          ),
+                                          onChanged: (_) => setState(() {
+                                            emailValidationSequence += 1;
+                                            emailDomainError = null;
+                                            emailChecking = false;
+                                          }),
+                                          validator: (v) =>
+                                              !emailSyntaxIsValid(
+                                                (v ?? '').trim(),
+                                              )
+                                              ? 'Enter a complete email address'
+                                              : null,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Focus(
+                                    onFocusChange: (focused) => setState(
+                                      () => passwordFocused = focused,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const AuthFieldLabel('Password'),
+                                        const SizedBox(height: 8),
+                                        TextFormField(
+                                          controller: password,
+                                          obscureText: hidden,
+                                          autofillHints: [
+                                            register
+                                                ? AutofillHints.newPassword
+                                                : AutofillHints.password,
+                                          ],
+                                          decoration: InputDecoration(
+                                            hintText: 'Enter your password',
+                                            suffixIcon: IconButton(
+                                              onPressed: () => setState(
+                                                () => hidden = !hidden,
+                                              ),
+                                              tooltip: hidden
+                                                  ? 'Show password'
+                                                  : 'Hide password',
+                                              icon: Icon(
+                                                hidden
+                                                    ? Icons.visibility_outlined
+                                                    : Icons
+                                                          .visibility_off_outlined,
+                                              ),
+                                            ),
+                                          ),
+                                          onChanged: register
+                                              ? (_) => setState(() {})
+                                              : null,
+                                          validator: (v) =>
+                                              register && !strongPassword
+                                              ? 'Complete all password requirements'
+                                              : (v ?? '').length < 8
+                                              ? 'Use at least 8 characters'
+                                              : null,
+                                          onFieldSubmitted: register
+                                              ? null
+                                              : (_) => submit(),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (register && passwordFocused) ...[
+                                    const SizedBox(height: 10),
+                                    Wrap(
+                                      spacing: 12,
+                                      runSpacing: 8,
+                                      children: [
+                                        PasswordRule(
+                                          label: 'At least 8 characters',
+                                          met: password.text.length >= 8,
+                                        ),
+                                        PasswordRule(
+                                          label: 'One uppercase letter',
+                                          met: RegExp(
+                                            r'[A-Z]',
+                                          ).hasMatch(password.text),
+                                        ),
+                                        PasswordRule(
+                                          label: 'One lowercase letter',
+                                          met: RegExp(
+                                            r'[a-z]',
+                                          ).hasMatch(password.text),
+                                        ),
+                                        PasswordRule(
+                                          label: 'One number',
+                                          met: RegExp(
+                                            r'\d',
+                                          ).hasMatch(password.text),
+                                        ),
+                                        PasswordRule(
+                                          label: 'One symbol',
+                                          met: RegExp(
+                                            r'[^A-Za-z0-9]',
+                                          ).hasMatch(password.text),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextFormField(
+                                      controller: confirmPassword,
+                                      obscureText: confirmHidden,
+                                      autofillHints: const [
+                                        AutofillHints.newPassword,
+                                      ],
+                                      decoration: InputDecoration(
+                                        labelText: 'Confirm password *',
+                                        suffixIcon: IconButton(
+                                          onPressed: () => setState(
+                                            () =>
+                                                confirmHidden = !confirmHidden,
+                                          ),
+                                          tooltip: confirmHidden
+                                              ? 'Show confirmed password'
+                                              : 'Hide confirmed password',
+                                          icon: Icon(
+                                            confirmHidden
+                                                ? Icons.visibility_outlined
+                                                : Icons.visibility_off_outlined,
+                                          ),
+                                        ),
+                                      ),
+                                      validator: (v) => v != password.text
+                                          ? 'Passwords do not match'
+                                          : null,
+                                      onFieldSubmitted: (_) => submit(),
+                                    ),
+                                  ],
+                                ],
+                                const SizedBox(height: 12),
+                                if (!register && !awaitingCode)
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: TextButton(
+                                      onPressed: busy
+                                          ? null
+                                          : () => Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    PasswordResetScreen(
+                                                      api: widget.api,
+                                                      initialEmail: email.text,
+                                                    ),
+                                              ),
+                                            ),
+                                      child: const Text('Forgot password?'),
+                                    ),
+                                  ),
+                                const SizedBox(height: 4),
+                                FilledButton(
+                                  onPressed: busy || emailChecking
+                                      ? null
+                                      : submit,
+                                  child: Text(
+                                    busy
+                                        ? awaitingCode
+                                              ? 'Verifying...'
+                                              : 'Please wait...'
+                                        : register
+                                        ? awaitingCode
+                                              ? 'Verify and create account'
+                                              : 'Send verification code'
+                                        : 'Log in',
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: busy
+                                      ? null
+                                      : () => setState(() {
+                                          register = !register;
+                                          awaitingCode = false;
+                                          passwordFocused = false;
+                                          emailChecking = false;
+                                          emailDomainError = null;
+                                          emailValidationSequence += 1;
+                                          clearOtp();
+                                          error = null;
+                                        }),
+                                  child: Text(
+                                    register
+                                        ? 'Already have an account? Log in'
+                                        : 'New to KayaTo? Create an account',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class AuthGlow extends StatelessWidget {
+  const AuthGlow({required this.color, required this.size, super.key});
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    child: SizedBox.square(
+      dimension: size,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(
+            colors: [color.withValues(alpha: .22), color.withValues(alpha: 0)],
+          ),
+        ),
       ),
+    ),
+  );
+}
+
+class AuthFieldLabel extends StatelessWidget {
+  const AuthFieldLabel(this.text, {super.key});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+      color: Theme.of(context).colorScheme.onSurface,
+      fontWeight: FontWeight.w700,
     ),
   );
 }
@@ -1038,6 +1428,18 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int index = 0;
+
+  String get initials {
+    final parts = widget.user['displayName']
+        .toString()
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return 'KT';
+    return parts.take(2).map((part) => part[0].toUpperCase()).join();
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
@@ -1055,10 +1457,9 @@ class _HomeScreenState extends State<HomeScreen> {
     ];
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'KayaTo',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
+        toolbarHeight: 64,
+        titleSpacing: 20,
+        title: const KayaBrandLockup(),
         actions: [
           IconButton(
             onPressed: () => Navigator.push(
@@ -1070,44 +1471,71 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: 'Notifications',
             icon: const Icon(Icons.notifications_outlined),
           ),
-          IconButton(
-            onPressed: widget.onTheme,
-            tooltip: 'Switch theme',
-            icon: const Icon(Icons.contrast_rounded),
+          const SizedBox(width: 2),
+          Tooltip(
+            message: 'Open profile and settings',
+            child: InkWell(
+              onTap: () => setState(() => index = 4),
+              borderRadius: BorderRadius.circular(22),
+              child: CircleAvatar(
+                radius: 17,
+                backgroundColor: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHigh,
+                foregroundColor: Theme.of(context).colorScheme.primary,
+                child: Text(
+                  initials,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
           ),
+          const SizedBox(width: 16),
         ],
       ),
       body: IndexedStack(index: index, children: pages),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: (value) => setState(() => index = value),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.space_dashboard_outlined),
-            selectedIcon: Icon(Icons.space_dashboard_rounded),
-            label: 'Home',
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.checklist_outlined),
-            selectedIcon: Icon(Icons.checklist_rounded),
-            label: 'Tasks',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.auto_awesome_outlined),
-            selectedIcon: Icon(Icons.auto_awesome_rounded),
-            label: 'Planner',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline_rounded),
-            selectedIcon: Icon(Icons.chat_bubble_rounded),
-            label: 'Chat',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.grid_view_outlined),
-            selectedIcon: Icon(Icons.grid_view_rounded),
-            label: 'More',
-          ),
-        ],
+        ),
+        child: NavigationBar(
+          selectedIndex: index,
+          onDestinationSelected: (value) => setState(() => index = value),
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.space_dashboard_outlined),
+              selectedIcon: Icon(Icons.space_dashboard_rounded),
+              label: 'Home',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.checklist_outlined),
+              selectedIcon: Icon(Icons.checklist_rounded),
+              label: 'Tasks',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.auto_awesome_outlined),
+              selectedIcon: Icon(Icons.auto_awesome_rounded),
+              label: 'Planner',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.chat_bubble_outline_rounded),
+              selectedIcon: Icon(Icons.chat_bubble_rounded),
+              label: 'Chat',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.grid_view_outlined),
+              selectedIcon: Icon(Icons.grid_view_rounded),
+              label: 'More',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1145,23 +1573,16 @@ class _DashboardTabState extends State<DashboardTab> {
     child: ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        Text(
-          'Good day, ${widget.user['displayName'].toString().split(' ').first}.',
-          style: Theme.of(
-            context,
-          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+        PageHeader(
+          title:
+              'Good day, ${widget.user['displayName'].toString().split(' ').first}.',
+          subtitle: 'Here is what needs your attention today.',
+          icon: Icons.space_dashboard_rounded,
         ),
-        const SizedBox(height: 6),
-        Text(
-          'Your latest work at a glance.',
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 24),
         if (error != null) ErrorBox(error!),
         if (data == null && error == null)
-          const Center(child: CircularProgressIndicator())
+          const LoadingPanel(label: 'Loading your workspace...')
         else if (data != null) ...[
           Row(
             children: [
@@ -1169,22 +1590,44 @@ class _DashboardTabState extends State<DashboardTab> {
                 label: 'Completed',
                 value: '${data!['metrics']['completed']}',
                 icon: Icons.check_circle_outline,
+                color: kayaSuccess,
               ),
               const SizedBox(width: 12),
               Metric(
                 label: 'In progress',
                 value: '${data!['metrics']['inProgress']}',
                 icon: Icons.timelapse_rounded,
+                color: kayaRuby,
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Metric(
+                label: 'Needs attention',
+                value: '${data!['metrics']['needsAttention']}',
+                icon: Icons.priority_high_rounded,
+                color: kayaWarning,
+              ),
+              const SizedBox(width: 12),
+              Metric(
+                label: 'Total tasks',
+                value: '${data!['metrics']['total']}',
+                icon: Icons.inventory_2_outlined,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
           SectionCard(
             title: 'Priority list',
+            subtitle: 'Your nearest and most important work',
             children: [
               for (final task in data!['tasks'])
                 ListTile(
-                  contentPadding: EdgeInsets.zero,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                  leading: StatusIcon(status: task['status']?.toString()),
                   title: Text(
                     task['title'],
                     style: const TextStyle(fontWeight: FontWeight.w700),
@@ -1207,10 +1650,12 @@ class Metric extends StatelessWidget {
     required this.label,
     required this.value,
     required this.icon,
+    required this.color,
     super.key,
   });
   final String label, value;
   final IconData icon;
+  final Color color;
   @override
   Widget build(BuildContext context) => Expanded(
     child: Card(
@@ -1219,15 +1664,37 @@ class Metric extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon),
-            const SizedBox(height: 18),
-            Text(
-              value,
-              style: Theme.of(
-                context,
-              ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
+            Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.11),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Icon(icon, size: 19, color: color),
+                ),
+                const Spacer(),
+                Text(
+                  value,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ),
-            Text(label),
+            const SizedBox(height: 14),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ],
         ),
       ),
@@ -1372,16 +1839,15 @@ class _TasksTabState extends State<TasksTab> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
         children: [
-          Text(
-            'My tasks',
-            style: Theme.of(
-              context,
-            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+          const PageHeader(
+            title: 'My tasks',
+            subtitle: 'Plan, prioritize, and finish your work.',
+            icon: Icons.checklist_rounded,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           if (error != null) ErrorBox(error!),
           if (loading)
-            const Center(child: CircularProgressIndicator())
+            const LoadingPanel(label: 'Loading tasks...')
           else if (tasks.isEmpty)
             const EmptyCopy('No tasks yet. Create your first task.')
           else
@@ -1404,6 +1870,16 @@ class _TasksTabState extends State<TasksTab> {
                       task['status'] == 'done'
                           ? Icons.check_circle
                           : Icons.radio_button_unchecked,
+                    ),
+                    style: IconButton.styleFrom(
+                      foregroundColor: task['status'] == 'done'
+                          ? kayaSuccess
+                          : Theme.of(context).colorScheme.primary,
+                      backgroundColor: task['status'] == 'done'
+                          ? kayaSuccess.withValues(alpha: 0.1)
+                          : Theme.of(
+                              context,
+                            ).colorScheme.primary.withValues(alpha: 0.08),
                     ),
                   ),
                   trailing: PopupMenuButton<String>(
@@ -1546,16 +2022,15 @@ class _BillsTabState extends State<BillsTab> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
         children: [
-          Text(
-            'Bills & reminders',
-            style: Theme.of(
-              context,
-            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+          const PageHeader(
+            title: 'Bills & reminders',
+            subtitle: 'Keep payments visible and on schedule.',
+            icon: Icons.receipt_long_rounded,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           if (error != null) ErrorBox(error!),
           if (loading)
-            const Center(child: CircularProgressIndicator())
+            const LoadingPanel(label: 'Loading reminders...')
           else if (bills.isEmpty)
             const EmptyCopy('No reminders yet. Add your first bill.')
           else
@@ -1573,6 +2048,16 @@ class _BillsTabState extends State<BillsTab> {
                       bill['status'] == 'paid'
                           ? Icons.check_circle
                           : Icons.receipt_long_outlined,
+                    ),
+                    style: IconButton.styleFrom(
+                      foregroundColor: bill['status'] == 'paid'
+                          ? kayaSuccess
+                          : Theme.of(context).colorScheme.primary,
+                      backgroundColor: bill['status'] == 'paid'
+                          ? kayaSuccess.withValues(alpha: 0.1)
+                          : Theme.of(
+                              context,
+                            ).colorScheme.primary.withValues(alpha: 0.08),
                     ),
                   ),
                   title: Text(
@@ -1621,10 +2106,162 @@ class PlannerTab extends StatefulWidget {
 }
 
 class _PlannerTabState extends State<PlannerTab> {
+  static const _maxFileBytes = 5 * 1024 * 1024;
+  static const _maxSourceCharacters = 60000;
+  static const _maxBriefCharacters = 5000;
+  static const _allowedExtensions = [
+    'pdf',
+    'txt',
+    'md',
+    'markdown',
+    'csv',
+    'json',
+  ];
+
   final brief = TextEditingController();
   List plan = [];
   bool busy = false;
+  bool importing = false;
   String? error;
+  String? importedFileName;
+  int? importedFileBytes;
+  String? importMessage;
+
+  @override
+  void dispose() {
+    brief.dispose();
+    super.dispose();
+  }
+
+  String _fileSize(int bytes) {
+    if (bytes >= 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / 1024).ceil()} KB';
+  }
+
+  String _cleanSource(String value) => value
+      .replaceAll('\u0000', '')
+      .replaceAll(RegExp(r'\r\n?'), '\n')
+      .replaceAll(RegExp(r'[ \t]+'), ' ')
+      .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+      .trim();
+
+  Future<String> _extractPdfText(Uint8List bytes, String fileName) async {
+    await pdfrxFlutterInitialize();
+    final document = await PdfDocument.openData(
+      bytes,
+      sourceName: '$fileName-${DateTime.now().microsecondsSinceEpoch}',
+      maxSizeToCacheOnMemory: _maxFileBytes,
+    );
+    try {
+      final extracted = StringBuffer();
+      for (final page in document.pages) {
+        final pageText = await page.loadText();
+        final text = pageText?.fullText.trim();
+        if (text == null || text.isEmpty) continue;
+        if (extracted.isNotEmpty) extracted.writeln('\n');
+        extracted.write(text);
+        if (extracted.length >= _maxSourceCharacters) break;
+      }
+      return extracted.toString();
+    } finally {
+      await document.dispose();
+    }
+  }
+
+  Future<void> importFile() async {
+    if (importing || busy) return;
+    final file = await FilePicker.pickFile(
+      type: FileType.custom,
+      allowedExtensions: _allowedExtensions,
+    );
+    if (file == null) return;
+
+    setState(() {
+      importing = true;
+      error = null;
+      importMessage = 'Reading ${file.name}...';
+      importedFileName = file.name;
+      importedFileBytes = null;
+    });
+
+    try {
+      final length = file.lengthSync() ?? await file.length();
+      if (length == null) throw Exception('Could not determine the file size.');
+      if (length == 0) throw Exception('The selected file is empty.');
+      if (length > _maxFileBytes) {
+        throw Exception('Choose a file that is 5 MB or smaller.');
+      }
+      final extension = (file.extension ?? '').toLowerCase();
+      if (!_allowedExtensions.contains(extension)) {
+        throw Exception('This file type is not supported.');
+      }
+
+      final bytes = await file.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        importedFileBytes = length;
+        importMessage = extension == 'pdf'
+            ? 'Extracting text from PDF...'
+            : 'Reading document text...';
+      });
+
+      final rawText = extension == 'pdf'
+          ? await _extractPdfText(bytes, file.name)
+          : utf8.decode(bytes, allowMalformed: true);
+      final cleaned = _cleanSource(rawText);
+      if (cleaned.length < 20 ||
+          RegExp(r'[A-Za-z0-9]').allMatches(cleaned).length < 10) {
+        throw Exception(
+          extension == 'pdf'
+              ? 'No readable text was found. Scanned PDFs need OCR before upload.'
+              : 'The file does not contain enough readable text.',
+        );
+      }
+
+      if (!mounted) return;
+      setState(() => importMessage = 'Creating a concise summary...');
+      final source = cleaned.length > _maxSourceCharacters
+          ? cleaned.substring(0, _maxSourceCharacters)
+          : cleaned;
+      final data = await widget.api.request(
+        '/planner/summarize',
+        method: 'POST',
+        body: {'text': source},
+      );
+      final summary = (data['summary'] ?? '').toString().trim();
+      if (summary.isEmpty) throw Exception('Could not summarize this file.');
+
+      brief.text = summary.length > _maxBriefCharacters
+          ? summary.substring(0, _maxBriefCharacters)
+          : summary;
+      if (!mounted) return;
+      setState(() {
+        plan = [];
+        importMessage = 'Summary ready. Review or edit it before generating.';
+      });
+    } catch (exception) {
+      if (!mounted) return;
+      setState(() {
+        error = exception.toString().replaceFirst('Exception: ', '');
+        importMessage = null;
+        importedFileName = null;
+        importedFileBytes = null;
+      });
+    } finally {
+      if (mounted) setState(() => importing = false);
+    }
+  }
+
+  void removeImportedFile() {
+    setState(() {
+      importedFileName = null;
+      importedFileBytes = null;
+      importMessage = null;
+    });
+  }
+
   Future<void> generate() async {
     if (brief.text.trim().length < 20) {
       setState(() => error = 'Add a little more detail to your project brief.');
@@ -1675,32 +2312,39 @@ class _PlannerTabState extends State<PlannerTab> {
   Widget build(BuildContext context) => ListView(
     padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
     children: [
-      Text(
-        'Project planner',
-        style: Theme.of(
-          context,
-        ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+      const PageHeader(
+        title: 'Project planner',
+        subtitle: 'Turn a brief into a reviewable task breakdown.',
+        icon: Icons.auto_awesome_rounded,
       ),
-      const SizedBox(height: 6),
-      Text(
-        'Turn a brief into editable tasks.',
-        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+      const SizedBox(height: 24),
+      _PlannerFileImport(
+        fileName: importedFileName,
+        fileSize: importedFileBytes == null
+            ? null
+            : _fileSize(importedFileBytes!),
+        message: importMessage,
+        loading: importing,
+        onPick: importFile,
+        onRemove: removeImportedFile,
       ),
       const SizedBox(height: 18),
       TextField(
         controller: brief,
         minLines: 6,
         maxLines: 10,
+        maxLength: _maxBriefCharacters,
         decoration: const InputDecoration(
           labelText: 'Project brief',
           alignLabelWithHint: true,
-          hintText: 'Describe requirements, outputs, and constraints.',
+          hintText:
+              'Upload a file or describe requirements, outputs, and constraints.',
         ),
       ),
       const SizedBox(height: 14),
       if (error != null) ErrorBox(error!),
       FilledButton.icon(
-        onPressed: busy ? null : generate,
+        onPressed: busy || importing ? null : generate,
         icon: const Icon(Icons.auto_awesome_rounded),
         label: Text(busy ? 'Preparing...' : 'Generate plan'),
       ),
@@ -1708,6 +2352,7 @@ class _PlannerTabState extends State<PlannerTab> {
         const SizedBox(height: 20),
         SectionCard(
           title: 'Draft plan',
+          subtitle: '${plan.length} tasks ready to review',
           children: [
             for (final task in plan)
               ListTile(
@@ -1733,6 +2378,122 @@ class _PlannerTabState extends State<PlannerTab> {
   );
 }
 
+class _PlannerFileImport extends StatelessWidget {
+  const _PlannerFileImport({
+    required this.fileName,
+    required this.fileSize,
+    required this.message,
+    required this.loading,
+    required this.onPick,
+    required this.onRemove,
+  });
+
+  final String? fileName;
+  final String? fileSize;
+  final String? message;
+  final bool loading;
+  final VoidCallback onPick;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final hasFile = fileName != null;
+    final fileDetails = [fileSize, message].whereType<String>().join(' · ');
+    return Semantics(
+      button: !loading,
+      label: hasFile
+          ? 'Imported file $fileName'
+          : 'Choose a project brief file',
+      child: Material(
+        color: hasFile
+            ? colors.primary.withValues(alpha: 0.08)
+            : colors.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: hasFile
+                ? colors.primary.withValues(alpha: 0.7)
+                : colors.outlineVariant,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: loading ? null : onPick,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: colors.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  alignment: Alignment.center,
+                  child: loading
+                      ? SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: colors.primary,
+                          ),
+                        )
+                      : Icon(
+                          hasFile
+                              ? Icons.description_rounded
+                              : Icons.upload_file_rounded,
+                          color: colors.primary,
+                        ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        hasFile ? fileName! : 'Upload project brief',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        hasFile
+                            ? fileDetails
+                            : 'PDF, TXT, Markdown, CSV, or JSON · Max 5 MB',
+                        style: TextStyle(
+                          color: colors.onSurfaceVariant,
+                          fontSize: 12,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (hasFile && !loading)
+                  IconButton(
+                    tooltip: 'Remove file',
+                    onPressed: onRemove,
+                    icon: const Icon(Icons.close_rounded),
+                  )
+                else if (!loading)
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: colors.onSurfaceVariant,
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class ChatTab extends StatefulWidget {
   const ChatTab({required this.api, required this.user, super.key});
   final ApiClient api;
@@ -1746,7 +2507,7 @@ class _ChatTabState extends State<ChatTab> {
   Map? active;
   final text = TextEditingController();
   String? error;
-  bool loading = true;
+  bool loading = true, conversationsOpen = false;
   @override
   void initState() {
     super.initState();
@@ -1755,10 +2516,17 @@ class _ChatTabState extends State<ChatTab> {
 
   Future<void> loadConversations() async {
     try {
+      final previousId = active?['_id'];
       conversations = await widget.api.request('/conversations');
       if (conversations.isNotEmpty) {
-        active = conversations.first;
+        active = conversations.cast<Map>().firstWhere(
+          (item) => item['_id'] == previousId,
+          orElse: () => conversations.first,
+        );
         await loadMessages();
+      } else {
+        active = null;
+        messages = [];
       }
     } catch (e) {
       error = e.toString();
@@ -1768,6 +2536,7 @@ class _ChatTabState extends State<ChatTab> {
   }
 
   Future<void> manageFriends() async {
+    if (mounted) setState(() => conversationsOpen = false);
     final conversation = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(builder: (_) => FriendsPage(api: widget.api)),
@@ -1781,8 +2550,13 @@ class _ChatTabState extends State<ChatTab> {
 
   String conversationLabel(Map item) {
     if (item['kind'] != 'direct') return '#${item['name']}';
-    final participants = (item['participants'] as List? ?? const []);
-    final other = participants
+    return otherParticipant(item)?['displayName']?.toString() ??
+        'Direct message';
+  }
+
+  Map? otherParticipant(Map item) {
+    final participants = item['participants'] as List? ?? const [];
+    return participants
         .cast<Map>()
         .where(
           (person) =>
@@ -1790,7 +2564,43 @@ class _ChatTabState extends State<ChatTab> {
               '${widget.user['id'] ?? widget.user['_id']}',
         )
         .firstOrNull;
-    return other?['displayName']?.toString() ?? 'Direct message';
+  }
+
+  String conversationSubtitle(Map item) {
+    if (item['kind'] != 'direct') {
+      return item['team']?['name']?.toString() ?? 'Team channel';
+    }
+    final person = otherParticipant(item);
+    final username = person?['username']?.toString() ?? '';
+    return username.isEmpty ? 'Direct message' : '@$username';
+  }
+
+  String conversationInitials(Map item) {
+    final label = conversationLabel(item).replaceFirst('#', '').trim();
+    return label
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .take(2)
+        .map((part) => part[0].toUpperCase())
+        .join();
+  }
+
+  Future<void> chooseConversation(Map item) async {
+    if (active?['_id'] == item['_id']) {
+      setState(() => conversationsOpen = false);
+      return;
+    }
+    setState(() {
+      active = item;
+      messages = [];
+      error = null;
+      conversationsOpen = false;
+    });
+    try {
+      await loadMessages();
+    } catch (exception) {
+      if (mounted) setState(() => error = exception.toString());
+    }
   }
 
   Future<void> loadMessages() async {
@@ -1823,137 +2633,378 @@ class _ChatTabState extends State<ChatTab> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
-        child: Row(
+  bool isOwnMessage(Map message) =>
+      message['senderType'] != 'ai' &&
+      '${message['sender']?['_id'] ?? message['sender']}' ==
+          '${widget.user['id'] ?? widget.user['_id']}';
+
+  Widget messageBubble(BuildContext context, Map message) {
+    final own = isOwnMessage(message);
+    final ai = message['senderType'] == 'ai';
+    final scheme = Theme.of(context).colorScheme;
+    final background = own
+        ? scheme.primary
+        : ai
+        ? scheme.primary.withValues(alpha: 0.1)
+        : scheme.surface;
+    final foreground = own ? scheme.onPrimary : scheme.onSurface;
+    return Align(
+      alignment: own ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 340),
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        decoration: BoxDecoration(
+          color: background,
+          border: own ? null : Border.all(color: scheme.outlineVariant),
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(14),
+            topRight: const Radius.circular(14),
+            bottomLeft: Radius.circular(own ? 14 : 4),
+            bottomRight: Radius.circular(own ? 4 : 14),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Text(
-                active == null ? 'Messages' : conversationLabel(active!),
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+            if (!own) ...[
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (ai) ...[
+                    Icon(
+                      Icons.auto_awesome_rounded,
+                      size: 14,
+                      color: scheme.primary,
+                    ),
+                    const SizedBox(width: 5),
+                  ],
+                  Text(
+                    ai
+                        ? 'Kaya'
+                        : message['sender']?['displayName'] ??
+                              message['senderName'] ??
+                              'Member',
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
               ),
-            ),
-            IconButton(
-              onPressed: manageFriends,
-              tooltip: 'Friends and requests',
-              icon: const Icon(Icons.person_add_alt_1_outlined),
+              const SizedBox(height: 5),
+            ],
+            Text(
+              message['content'],
+              style: TextStyle(color: foreground, height: 1.45),
             ),
           ],
         ),
       ),
-      if (conversations.length > 1)
-        SizedBox(
-          height: 52,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            children: [
-              for (final item in conversations)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(conversationLabel(item)),
-                    selected: active?['_id'] == item['_id'],
-                    onSelected: (_) {
-                      setState(() => active = item);
-                      loadMessages();
-                    },
+    );
+  }
+
+  Widget conversationDrawer(BuildContext context, {required bool persistent}) {
+    final scheme = Theme.of(context).colorScheme;
+    final direct = conversations.cast<Map>().where(
+      (item) => item['kind'] == 'direct',
+    );
+    final channels = conversations.cast<Map>().where(
+      (item) => item['kind'] != 'direct',
+    );
+    Widget sectionLabel(String label) => Padding(
+      padding: const EdgeInsets.fromLTRB(18, 18, 12, 7),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: scheme.onSurfaceVariant,
+          fontWeight: FontWeight.w800,
+          letterSpacing: .8,
+        ),
+      ),
+    );
+    Widget conversationItem(Map item) {
+      final selected = active?['_id'] == item['_id'];
+      final directMessage = item['kind'] == 'direct';
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        child: ListTile(
+          selected: selected,
+          selectedColor: scheme.onSecondaryContainer,
+          selectedTileColor: scheme.secondaryContainer,
+          leading: directMessage
+              ? CircleAvatar(
+                  radius: 18,
+                  backgroundColor: selected
+                      ? scheme.primary
+                      : scheme.surfaceContainerHighest,
+                  foregroundColor: selected
+                      ? scheme.onPrimary
+                      : scheme.onSurfaceVariant,
+                  child: Text(
+                    conversationInitials(item),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                )
+              : SizedBox.square(
+                  dimension: 36,
+                  child: Icon(
+                    Icons.tag_rounded,
+                    color: selected ? scheme.primary : scheme.onSurfaceVariant,
                   ),
                 ),
-            ],
+          title: Text(
+            conversationLabel(item).replaceFirst('#', ''),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w700),
           ),
+          subtitle: Text(
+            conversationSubtitle(item),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: selected
+              ? Icon(Icons.check_rounded, size: 18, color: scheme.primary)
+              : null,
+          onTap: () => chooseConversation(item),
         ),
-      Expanded(
-        child: loading
-            ? const Center(child: CircularProgressIndicator())
-            : active == null
-            ? const EmptyCopy(
-                'Create a team on the More tab to start chatting.',
-              )
-            : RefreshIndicator(
-                onRefresh: loadMessages,
-                child: ListView(
-                  padding: const EdgeInsets.all(20),
+      );
+    }
+
+    return Material(
+      color: scheme.surfaceContainerLow,
+      child: Column(
+        children: [
+          Container(
+            height: 64,
+            padding: const EdgeInsets.fromLTRB(18, 0, 8, 0),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Messages',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: manageFriends,
+                  tooltip: 'Add friends',
+                  icon: const Icon(Icons.person_add_alt_1_outlined),
+                ),
+                if (!persistent)
+                  IconButton(
+                    onPressed: () => setState(() => conversationsOpen = false),
+                    tooltip: 'Close conversations',
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: loading
+                ? const Center(child: CircularProgressIndicator())
+                : ListView(
+                    padding: const EdgeInsets.only(top: 4, bottom: 20),
+                    children: [
+                      sectionLabel('DIRECT MESSAGES'),
+                      for (final item in direct) conversationItem(item),
+                      if (direct.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 18),
+                          child: Text('No direct messages yet.'),
+                        ),
+                      sectionLabel('TEAM CHANNELS'),
+                      for (final item in channels) conversationItem(item),
+                      if (channels.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 18),
+                          child: Text('No team channels yet.'),
+                        ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget conversationPanel(BuildContext context, {required bool showMenu}) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      children: [
+        Container(
+          height: 64,
+          padding: EdgeInsets.fromLTRB(showMenu ? 8 : 20, 0, 8, 0),
+          decoration: BoxDecoration(
+            color: scheme.surface.withValues(alpha: 0.92),
+            border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+          ),
+          child: Row(
+            children: [
+              if (showMenu)
+                IconButton(
+                  onPressed: () => setState(() => conversationsOpen = true),
+                  tooltip: 'Open conversations',
+                  icon: const Icon(Icons.menu_rounded),
+                ),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (error != null) ErrorBox(error!),
-                    for (final message in messages)
-                      Align(
-                        alignment:
-                            message['senderType'] == 'ai' ||
-                                '${message['sender']?['_id'] ?? message['sender']}' !=
-                                    '${widget.user['id'] ?? widget.user['_id']}'
-                            ? Alignment.centerLeft
-                            : Alignment.centerRight,
-                        child: Container(
-                          constraints: const BoxConstraints(maxWidth: 340),
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: message['senderType'] == 'ai'
-                                ? Theme.of(
-                                    context,
-                                  ).colorScheme.secondaryContainer
-                                : Theme.of(
-                                    context,
-                                  ).colorScheme.primaryContainer,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                message['senderType'] == 'ai'
-                                    ? 'Kaya'
-                                    : message['sender']?['displayName'] ??
-                                          message['senderName'] ??
-                                          'Member',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(message['content']),
-                            ],
-                          ),
+                    Text(
+                      active == null
+                          ? 'Messages'
+                          : conversationLabel(active!).replaceFirst('#', ''),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    if (active != null)
+                      Text(
+                        conversationSubtitle(active!),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
                         ),
                       ),
                   ],
                 ),
               ),
-      ),
-      SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: text,
-                  enabled: active != null,
-                  minLines: 1,
-                  maxLines: 4,
-                  decoration: const InputDecoration(
-                    hintText: 'Message or mention @Kaya',
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton.filled(
-                onPressed: active == null ? null : send,
-                tooltip: 'Send message',
-                icon: const Icon(Icons.send_rounded),
+              IconButton(
+                onPressed: manageFriends,
+                tooltip: 'Friends and requests',
+                icon: const Icon(Icons.person_add_alt_1_outlined),
               ),
             ],
           ),
         ),
-      ),
-    ],
+        Expanded(
+          child: loading
+              ? const Center(child: CircularProgressIndicator())
+              : active == null
+              ? const EmptyCopy(
+                  'Add a friend or create a team to start chatting.',
+                )
+              : RefreshIndicator(
+                  onRefresh: loadMessages,
+                  child: ListView(
+                    padding: const EdgeInsets.all(20),
+                    children: [
+                      if (error != null) ErrorBox(error!),
+                      for (final message in messages)
+                        messageBubble(context, message),
+                    ],
+                  ),
+                ),
+        ),
+        SafeArea(
+          top: false,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+            decoration: BoxDecoration(
+              color: scheme.surface.withValues(alpha: 0.94),
+              border: Border(top: BorderSide(color: scheme.outlineVariant)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: text,
+                    enabled: active != null,
+                    minLines: 1,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      hintText: 'Message or mention @Kaya',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  onPressed: active == null ? null : send,
+                  tooltip: 'Send message',
+                  icon: const Icon(Icons.send_rounded),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final wide = constraints.maxWidth >= 760;
+      final drawerWidth = (constraints.maxWidth * .86).clamp(280.0, 340.0);
+      if (wide) {
+        return Row(
+          children: [
+            SizedBox(
+              width: 290,
+              child: conversationDrawer(context, persistent: true),
+            ),
+            VerticalDivider(
+              width: 1,
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+            Expanded(child: conversationPanel(context, showMenu: false)),
+          ],
+        );
+      }
+      final reduceMotion = MediaQuery.disableAnimationsOf(context);
+      return Stack(
+        children: [
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: conversationsOpen,
+              child: ExcludeSemantics(
+                excluding: conversationsOpen,
+                child: conversationPanel(context, showMenu: true),
+              ),
+            ),
+          ),
+          if (conversationsOpen)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () => setState(() => conversationsOpen = false),
+                child: ColoredBox(color: Colors.black.withValues(alpha: .46)),
+              ),
+            ),
+          AnimatedPositioned(
+            duration: reduceMotion
+                ? Duration.zero
+                : const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            top: 0,
+            bottom: 0,
+            left: conversationsOpen ? 0 : -drawerWidth,
+            width: drawerWidth,
+            child: IgnorePointer(
+              ignoring: !conversationsOpen,
+              child: ExcludeSemantics(
+                excluding: !conversationsOpen,
+                child: conversationDrawer(context, persistent: false),
+              ),
+            ),
+          ),
+        ],
+      );
+    },
   );
 }
 
@@ -1983,13 +3034,66 @@ class MoreTab extends StatelessWidget {
   Widget build(BuildContext context) => ListView(
     padding: const EdgeInsets.all(20),
     children: [
-      Text(
-        'More',
-        style: Theme.of(
-          context,
-        ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+      const PageHeader(
+        title: 'Workspace',
+        subtitle: 'Manage your account and connected tools.',
+        icon: Icons.grid_view_rounded,
       ),
-      const SizedBox(height: 16),
+      const SizedBox(height: 24),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 25,
+                backgroundColor: Theme.of(
+                  context,
+                ).colorScheme.primary.withValues(alpha: 0.1),
+                foregroundColor: Theme.of(context).colorScheme.primary,
+                child: Text(
+                  user['displayName']
+                      .toString()
+                      .trim()
+                      .split(RegExp(r'\s+'))
+                      .where((part) => part.isNotEmpty)
+                      .take(2)
+                      .map((part) => part[0].toUpperCase())
+                      .join(),
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      user['displayName']?.toString() ?? 'KayaTo user',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      user['email']?.toString() ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.verified_user_outlined,
+                size: 20,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
       Card(
         child: Column(
           children: [
@@ -3145,7 +4249,7 @@ class TeamDetailPage extends StatefulWidget {
 
 class _TeamDetailPageState extends State<TeamDetailPage> {
   late Map<String, dynamic> team;
-  late final TextEditingController name, description, memberEmail;
+  late final TextEditingController name, description, memberIdentifier;
   String memberRole = 'member';
   String? error;
   @override
@@ -3154,14 +4258,14 @@ class _TeamDetailPageState extends State<TeamDetailPage> {
     team = widget.team;
     name = TextEditingController(text: team['name']);
     description = TextEditingController(text: team['description'] ?? '');
-    memberEmail = TextEditingController();
+    memberIdentifier = TextEditingController();
   }
 
   @override
   void dispose() {
     name.dispose();
     description.dispose();
-    memberEmail.dispose();
+    memberIdentifier.dispose();
     super.dispose();
   }
 
@@ -3192,10 +4296,13 @@ class _TeamDetailPageState extends State<TeamDetailPage> {
         await widget.api.request(
           '/teams/${team['_id']}/members',
           method: 'POST',
-          body: {'email': memberEmail.text, 'role': memberRole},
+          body: {
+            'identifier': memberIdentifier.text.trim(),
+            'role': memberRole,
+          },
         ),
       );
-      memberEmail.clear();
+      memberIdentifier.clear();
       setState(() {});
     } catch (e) {
       setState(() => error = e.toString());
@@ -3314,9 +4421,11 @@ class _TeamDetailPageState extends State<TeamDetailPage> {
         ),
         const SizedBox(height: 8),
         TextField(
-          controller: memberEmail,
-          keyboardType: TextInputType.emailAddress,
-          decoration: const InputDecoration(labelText: 'KayaTo account email'),
+          controller: memberIdentifier,
+          decoration: const InputDecoration(
+            labelText: 'Username or email',
+            hintText: '@username or name@example.com',
+          ),
         ),
         const SizedBox(height: 8),
         Row(
@@ -3886,14 +4995,22 @@ class BillSheet extends StatefulWidget {
 }
 
 class _BillSheetState extends State<BillSheet> {
+  static const categories = [
+    'Utilities',
+    'Internet',
+    'Mobile',
+    'Rent',
+    'Subscription',
+    'Insurance',
+    'Loan',
+    'Education',
+    'Healthcare',
+    'Transportation',
+    'Other',
+  ];
   final key = GlobalKey<FormState>();
-  late final TextEditingController name,
-      amount,
-      due,
-      category,
-      paymentUrl,
-      reminderDays;
-  String cycle = 'monthly', status = 'unpaid';
+  late final TextEditingController name, amount, due, paymentUrl, reminderDays;
+  String category = 'Other', cycle = 'monthly', status = 'unpaid';
   @override
   void initState() {
     super.initState();
@@ -3903,7 +5020,8 @@ class _BillSheetState extends State<BillSheet> {
     due = TextEditingController(
       text: bill?['dueDate'] == null ? '' : formatDateOnly(bill?['dueDate']),
     );
-    category = TextEditingController(text: bill?['category'] ?? 'Other');
+    category = bill?['category'] ?? 'Other';
+    if (!categories.contains(category)) category = 'Other';
     paymentUrl = TextEditingController(text: bill?['officialPaymentUrl'] ?? '');
     reminderDays = TextEditingController(
       text: (bill?['reminderDaysBefore'] as List? ?? const [3, 1]).join(', '),
@@ -3917,7 +5035,6 @@ class _BillSheetState extends State<BillSheet> {
     name.dispose();
     amount.dispose();
     due.dispose();
-    category.dispose();
     paymentUrl.dispose();
     reminderDays.dispose();
     super.dispose();
@@ -3936,9 +5053,15 @@ class _BillSheetState extends State<BillSheet> {
             validator: (v) => (v ?? '').isEmpty ? 'Enter a name' : null,
           ),
           const SizedBox(height: 12),
-          TextFormField(
-            controller: category,
+          DropdownButtonFormField<String>(
+            initialValue: category,
             decoration: const InputDecoration(labelText: 'Category'),
+            items: categories
+                .map(
+                  (value) => DropdownMenuItem(value: value, child: Text(value)),
+                )
+                .toList(),
+            onChanged: (value) => category = value!,
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
@@ -4029,7 +5152,7 @@ class _BillSheetState extends State<BillSheet> {
                   'amount': double.parse(amount.text),
                   'currency': widget.currency,
                   'dueDate': due.text,
-                  'category': category.text,
+                  'category': category,
                   'billingCycle': cycle,
                   'status': status,
                   'reminderDaysBefore': reminderDays.text
@@ -4092,9 +5215,193 @@ class FormSheet extends StatelessWidget {
   );
 }
 
+class KayaBrandLockup extends StatelessWidget {
+  const KayaBrandLockup({this.compact = false, super.key});
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final url = compact
+        ? '$kayaWebUrl/brand/${dark ? 'kayato-whitelogo.svg' : 'kayato-redlogo.svg'}'
+        : '$kayaWebUrl/brand/${dark ? 'kayato-textlogo_allwhite.svg' : 'kayato-textlogo_black.svg'}';
+    return Semantics(
+      label: 'KayaTo',
+      image: true,
+      child: SizedBox(
+        width: compact ? 34 : 102,
+        height: compact ? 34 : 32,
+        child: SvgPicture.network(
+          url,
+          key: ValueKey(url),
+          fit: BoxFit.contain,
+          alignment: Alignment.centerLeft,
+          excludeFromSemantics: true,
+          colorFilter: dark
+              ? const ColorFilter.mode(Color(0xFFF5F4F2), BlendMode.srcIn)
+              : null,
+          placeholderBuilder: (context) => Text(
+            'KayaTo',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              color: dark ? const Color(0xFFF5F4F2) : kayaInk,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.7,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class KayaBrandIcon extends StatelessWidget {
+  const KayaBrandIcon({this.size = 48, super.key});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Semantics(
+      label: 'KayaTo',
+      image: true,
+      child: SizedBox.square(
+        dimension: size,
+        child: SvgPicture.network(
+          '$kayaWebUrl/brand/${dark ? 'kayato-whitelogo.svg' : 'kayato-redlogo.svg'}',
+          fit: BoxFit.contain,
+          excludeFromSemantics: true,
+          colorFilter: dark
+              ? const ColorFilter.mode(Color(0xFFF5F4F2), BlendMode.srcIn)
+              : null,
+          placeholderBuilder: (context) => const SizedBox.square(
+            dimension: 22,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class PageHeader extends StatelessWidget {
+  const PageHeader({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    super.key,
+  });
+  final String title, subtitle;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Container(
+        width: 42,
+        height: 42,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Icon(
+          icon,
+          size: 21,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+      ),
+      const SizedBox(width: 13),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
+}
+
+class LoadingPanel extends StatelessWidget {
+  const LoadingPanel({required this.label, super.key});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 42),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surface,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+    ),
+    child: Column(
+      children: [
+        const SizedBox.square(
+          dimension: 24,
+          child: CircularProgressIndicator(strokeWidth: 2.5),
+        ),
+        const SizedBox(height: 14),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class StatusIcon extends StatelessWidget {
+  const StatusIcon({this.status, super.key});
+  final String? status;
+
+  @override
+  Widget build(BuildContext context) {
+    final done = status == 'done';
+    final active = status == 'in-progress' || status == 'review';
+    final color = done
+        ? kayaSuccess
+        : active
+        ? Theme.of(context).colorScheme.primary
+        : Theme.of(context).colorScheme.onSurfaceVariant;
+    final icon = done
+        ? Icons.check_rounded
+        : active
+        ? Icons.timelapse_rounded
+        : Icons.circle_outlined;
+    return Container(
+      width: 36,
+      height: 36,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Icon(icon, size: 19, color: color),
+    );
+  }
+}
+
 class SectionCard extends StatelessWidget {
-  const SectionCard({required this.title, required this.children, super.key});
+  const SectionCard({
+    required this.title,
+    required this.children,
+    this.subtitle,
+    super.key,
+  });
   final String title;
+  final String? subtitle;
   final List<Widget> children;
   @override
   Widget build(BuildContext context) => Card(
@@ -4109,6 +5416,15 @@ class SectionCard extends StatelessWidget {
               context,
             ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 3),
+            Text(
+              subtitle!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           ...children,
         ],
@@ -4121,25 +5437,65 @@ class PriorityChip extends StatelessWidget {
   const PriorityChip(this.value, {super.key});
   final String value;
   @override
-  Widget build(BuildContext context) =>
-      Chip(label: Text(value), visualDensity: VisualDensity.compact);
+  Widget build(BuildContext context) {
+    final normalized = value.toLowerCase();
+    final color = normalized == 'urgent' || normalized == 'high'
+        ? Theme.of(context).colorScheme.error
+        : normalized == 'medium'
+        ? kayaWarning
+        : kayaSuccess;
+    return Chip(
+      label: Text(value),
+      visualDensity: VisualDensity.compact,
+      backgroundColor: color.withValues(alpha: 0.09),
+      side: BorderSide(color: color.withValues(alpha: 0.2)),
+      labelStyle: TextStyle(
+        color: color,
+        fontSize: 11,
+        fontWeight: FontWeight.w800,
+      ),
+    );
+  }
 }
 
 class EmptyCopy extends StatelessWidget {
   const EmptyCopy(this.text, {super.key});
   final String text;
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 48),
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 44),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surface,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+    ),
     child: Column(
       children: [
-        Icon(
-          Icons.inbox_outlined,
-          size: 36,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        Container(
+          width: 48,
+          height: 48,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Theme.of(
+              context,
+            ).colorScheme.primary.withValues(alpha: 0.09),
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: Icon(
+            Icons.inbox_outlined,
+            size: 24,
+            color: Theme.of(context).colorScheme.primary,
+          ),
         ),
-        const SizedBox(height: 12),
-        Text(text, textAlign: TextAlign.center),
+        const SizedBox(height: 14),
+        Text(
+          text,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
       ],
     ),
   );
@@ -4155,10 +5511,28 @@ class ErrorBox extends StatelessWidget {
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.errorContainer,
       borderRadius: BorderRadius.circular(10),
+      border: Border.all(
+        color: Theme.of(context).colorScheme.error.withValues(alpha: 0.28),
+      ),
     ),
-    child: Text(
-      text,
-      style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          Icons.error_outline_rounded,
+          size: 19,
+          color: Theme.of(context).colorScheme.onErrorContainer,
+        ),
+        const SizedBox(width: 9),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+          ),
+        ),
+      ],
     ),
   );
 }

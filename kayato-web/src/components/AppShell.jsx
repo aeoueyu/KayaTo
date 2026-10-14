@@ -50,13 +50,29 @@ export default function AppShell() {
     ...searchResults.people.map((item) => ({ type: 'person', id: String(item.id), item })),
   ], [searchResults]);
 
-  useEffect(() => {
+  const loadTeams = useCallback(() => {
     let active = true;
+    setTeamsStatus('loading');
     api.get('/teams')
       .then(({ data }) => { if (active) { setTeams(data); setTeamsStatus('ready'); } })
       .catch(() => { if (active) { setTeams([]); setTeamsStatus('error'); } });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    let disposeRequest = loadTeams();
+    const refreshTeams = () => {
+      disposeRequest?.();
+      disposeRequest = loadTeams();
+    };
+    window.addEventListener('kayato:teams-changed', refreshTeams);
+    window.addEventListener('focus', refreshTeams);
+    return () => {
+      disposeRequest?.();
+      window.removeEventListener('kayato:teams-changed', refreshTeams);
+      window.removeEventListener('focus', refreshTeams);
+    };
+  }, [loadTeams]);
 
   const loadNotifications = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) setNotificationStatus('loading');

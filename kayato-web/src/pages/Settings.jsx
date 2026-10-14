@@ -1,5 +1,5 @@
 import {
-  Bell, Check, Eye, EyeOff, Laptop, LogOut, Mail, Monitor, MonitorCog, Moon,
+  Bell, Check, Eye, EyeOff, Laptop, LockKeyhole, LogOut, Mail, Monitor, MonitorCog, Moon,
   Save, Send, ShieldCheck, Smartphone, Sun, Trash2, UserRound,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -42,18 +42,20 @@ const capitalizePersonName = (value) => value
   .replace(/(^|[ .-])(\p{L})/gu, (_match, separator, letter) => `${separator}${letter.toLocaleUpperCase()}`)
   .slice(0, 40);
 
-function PasswordInput({ id, label, value, onChange, autoComplete, error }) {
+function PasswordInput({ id, label, value, onChange, autoComplete, error, success, disabled = false }) {
   const [visible, setVisible] = useState(false);
+  const descriptionId = error ? `${id}-error` : success ? `${id}-success` : undefined;
   return (
     <label className="field-label" htmlFor={id}>
       <span>{label} <b className="required-mark" aria-hidden="true">*</b></span>
       <span className="password-field">
-        <input id={id} type={visible ? 'text' : 'password'} value={value} onChange={onChange} minLength="8" maxLength="64" autoComplete={autoComplete} required aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} />
-        <button type="button" onClick={() => setVisible((current) => !current)} aria-label={`${visible ? 'Hide' : 'Show'} ${label.toLowerCase()}`}>
+        <input id={id} type={visible ? 'text' : 'password'} value={value} onChange={onChange} minLength="8" maxLength="64" autoComplete={autoComplete} required disabled={disabled} aria-invalid={Boolean(error)} aria-describedby={descriptionId} />
+        <button type="button" onClick={() => setVisible((current) => !current)} disabled={disabled} aria-label={`${visible ? 'Hide' : 'Show'} ${label.toLowerCase()}`}>
           {visible ? <EyeOff size={18} /> : <Eye size={18} />}
         </button>
       </span>
       {error && <small className="field-error" id={`${id}-error`} role="alert">{error}</small>}
+      {!error && success && <small className="field-success" id={`${id}-success`} role="status">{success}</small>}
     </label>
   );
 }
@@ -92,6 +94,8 @@ export default function Settings() {
   const [pushConfigStatus, setPushConfigStatus] = useState('loading');
   const [testingNotifications, setTestingNotifications] = useState(false);
   const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [passwordVerified, setPasswordVerified] = useState(false);
+  const [verifyingPassword, setVerifyingPassword] = useState(false);
   const [deletion, setDeletion] = useState({ password: '', confirmation: '' });
 
   useEffect(() => {
@@ -161,6 +165,7 @@ export default function Settings() {
     setStatus(null);
     const errors = {};
     if (!passwords.currentPassword) errors.currentPassword = 'Enter your current password.';
+    else if (!passwordVerified) errors.currentPassword = 'Verify your current password first.';
     if (!passwords.newPassword) errors.newPassword = 'Enter a new password.';
     else if (!(passwords.newPassword.length >= 8 && passwords.newPassword.length <= 64 && /[A-Z]/.test(passwords.newPassword) && /[a-z]/.test(passwords.newPassword) && /\d/.test(passwords.newPassword) && /[^A-Za-z0-9]/.test(passwords.newPassword))) errors.newPassword = 'Meet all password requirements before continuing.';
     if (!passwords.confirmPassword) errors.confirmPassword = 'Confirm your new password.';
@@ -171,10 +176,46 @@ export default function Settings() {
     try {
       const { data } = await api.post('/auth/change-password', { currentPassword: passwords.currentPassword, newPassword: passwords.newPassword });
       setPasswords({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setPasswordVerified(false);
       showStatus('success', data.message || 'Your password was changed.');
     } catch (error) {
       showStatus('error', errorMessage(error));
     } finally { setBusy(false); }
+  };
+
+  const verifyCurrentPassword = async () => {
+    setStatus(null);
+    if (!passwords.currentPassword) {
+      setFieldErrors((current) => ({ ...current, currentPassword: 'Enter your current password.' }));
+      return;
+    }
+    setVerifyingPassword(true);
+    setFieldErrors((current) => {
+      const next = { ...current };
+      delete next.currentPassword;
+      return next;
+    });
+    try {
+      await api.post('/auth/verify-password', { currentPassword: passwords.currentPassword });
+      setPasswordVerified(true);
+    } catch (error) {
+      setPasswordVerified(false);
+      setFieldErrors((current) => ({ ...current, currentPassword: errorMessage(error, 'Could not verify your password.') }));
+    } finally {
+      setVerifyingPassword(false);
+    }
+  };
+
+  const changeCurrentPassword = (event) => {
+    setPasswordVerified(false);
+    setPasswords({ currentPassword: event.target.value, newPassword: '', confirmPassword: '' });
+    setFieldErrors((current) => {
+      const next = { ...current };
+      delete next.currentPassword;
+      delete next.newPassword;
+      delete next.confirmPassword;
+      return next;
+    });
   };
 
   const saveNotifications = async () => {
@@ -246,10 +287,19 @@ export default function Settings() {
     primaryUsage: user?.primaryUsage || 'both',
   };
   const profileHasChanges = Object.keys(savedProfile).some((key) => profile[key] !== savedProfile[key]);
-  const passwordIsValid = passwords.currentPassword.length >= 8
+  const passwordIsValid = passwordVerified
+    && passwords.currentPassword.length >= 8
     && rules.every(([, met]) => met)
     && passwords.confirmPassword.length > 0
     && passwords.newPassword === passwords.confirmPassword;
+  const confirmPasswordMismatch = passwords.confirmPassword.length > 0
+    && passwords.newPassword !== passwords.confirmPassword;
+  const confirmPasswordError = fieldErrors.confirmPassword
+    || (confirmPasswordMismatch ? 'Passwords do not match.' : '');
+  const confirmPasswordSuccess = passwords.confirmPassword.length > 0
+    && passwords.newPassword === passwords.confirmPassword
+    ? 'Passwords match.'
+    : '';
   const savedNotifications = {
     taskAssignments: user?.notificationPreferences?.taskAssignments ?? true,
     deadlines: user?.notificationPreferences?.deadlines ?? true,
@@ -298,15 +348,21 @@ export default function Settings() {
           {activeSection === 'security' && <form className="settings-section" onSubmit={savePassword} noValidate>
             <header><div className="settings-section-icon"><ShieldCheck size={21} /></div><div><h2>Password & security</h2><p>Use a unique password you do not use for another account.</p></div></header>
             <div className="settings-section-body security-fields">
-              <PasswordInput id="current-password" label="Current password" value={passwords.currentPassword} onChange={(event) => { clearFieldError('currentPassword'); setPasswords({ ...passwords, currentPassword: event.target.value }); }} autoComplete="current-password" error={fieldErrors.currentPassword} />
-              <div className="security-password-grid">
-                <PasswordInput id="new-password" label="New password" value={passwords.newPassword} onChange={(event) => { clearFieldError('newPassword'); clearFieldError('confirmPassword'); setPasswords({ ...passwords, newPassword: event.target.value }); }} autoComplete="new-password" error={fieldErrors.newPassword} />
-                <PasswordInput id="confirm-new-password" label="Confirm new password" value={passwords.confirmPassword} onChange={(event) => { clearFieldError('confirmPassword'); setPasswords({ ...passwords, confirmPassword: event.target.value }); }} autoComplete="new-password" error={fieldErrors.confirmPassword} />
+              <div className="current-password-verification">
+                <PasswordInput id="current-password" label="Current password" value={passwords.currentPassword} onChange={changeCurrentPassword} autoComplete="current-password" error={fieldErrors.currentPassword} success={passwordVerified ? 'Current password verified.' : ''} />
+                <button type="button" className="button button-secondary" onClick={verifyCurrentPassword} disabled={busy || verifyingPassword || passwordVerified || !passwords.currentPassword}>
+                  {passwordVerified && <Check size={16} />}
+                  {verifyingPassword ? 'Verifying...' : passwordVerified ? 'Verified' : 'Verify password'}
+                </button>
+              </div>
+              {!passwordVerified && <p className="password-verification-note"><LockKeyhole size={15} />Verify your current password to unlock the new password fields.</p>}
+              <div className="security-password-grid" aria-disabled={!passwordVerified}>
+                <PasswordInput id="new-password" label="New password" value={passwords.newPassword} onChange={(event) => { clearFieldError('newPassword'); clearFieldError('confirmPassword'); setPasswords({ ...passwords, newPassword: event.target.value }); }} autoComplete="new-password" error={fieldErrors.newPassword} disabled={!passwordVerified} />
+                <PasswordInput id="confirm-new-password" label="Confirm new password" value={passwords.confirmPassword} onChange={(event) => { clearFieldError('confirmPassword'); setPasswords({ ...passwords, confirmPassword: event.target.value }); }} autoComplete="new-password" error={confirmPasswordError} success={confirmPasswordSuccess} disabled={!passwordVerified} />
               </div>
               {passwords.newPassword && <ul className="password-checklist settings-password-checklist" aria-label="Password requirements">{rules.map(([label, met]) => <li key={label} className={met ? 'met' : ''}><Check size={14} />{label}</li>)}</ul>}
-              {passwords.confirmPassword && !fieldErrors.confirmPassword && <small className={passwords.newPassword === passwords.confirmPassword ? 'field-success' : 'field-error'}>{passwords.newPassword === passwords.confirmPassword ? 'Passwords match.' : 'Passwords do not match.'}</small>}
             </div>
-            <footer><small className="settings-action-note">{passwordIsValid ? 'Your new password is ready to save.' : 'Complete all password requirements.'}</small><button className="button button-primary" disabled={busy || !passwordIsValid}><ShieldCheck size={16} />{busy ? 'Updating...' : 'Update password'}</button></footer>
+            <footer><small className="settings-action-note">{!passwordVerified ? 'Verify your current password to continue.' : passwordIsValid ? 'Your new password is ready to save.' : 'Complete all password requirements.'}</small><button className="button button-primary" disabled={busy || !passwordIsValid}><ShieldCheck size={16} />{busy ? 'Updating...' : 'Update password'}</button></footer>
           </form>}
 
           {activeSection === 'notifications' && <section className="settings-section">
