@@ -1,7 +1,7 @@
 
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { SESSION_NOTICE_KEY, useAuth } from '../auth/AuthContext';
 import Brand from '../components/Brand';
 import ThemeToggle from '../components/ThemeToggle';
@@ -24,7 +24,6 @@ export default function Login() {
 
   const { login } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
 
   const submit = async (event) => {
     event.preventDefault();
@@ -36,7 +35,7 @@ export default function Login() {
         { email: form.email, password: form.password },
         form.remember
       );
-      navigate(location.state?.from || '/app', { replace: true });
+      navigate('/app', { replace: true });
     } catch (requestError) {
       setError(errorMessage(requestError, 'Unable to sign in.'));
     } finally {
