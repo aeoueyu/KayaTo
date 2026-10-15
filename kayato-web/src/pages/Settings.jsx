@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../auth/AuthContext';
+import { SESSION_NOTICE_KEY, useAuth } from '../auth/AuthContext';
 import { api, errorMessage } from '../lib/api';
 import { CURRENCY_OPTIONS, TIMEZONE_OPTIONS } from '../lib/formatters';
 import { browserPushState, disableBrowserPush, enableBrowserPush } from '../lib/pushNotifications';
@@ -175,10 +175,10 @@ export default function Settings() {
     if (Object.keys(errors).length) return;
     setBusy(true);
     try {
-      const { data } = await api.post('/auth/change-password', { currentPassword: passwords.currentPassword, newPassword: passwords.newPassword });
-      setPasswords({ currentPassword: '', newPassword: '', confirmPassword: '' });
-      setPasswordVerified(false);
-      showStatus('success', data.message || 'Your password was changed.');
+      await api.post('/auth/change-password', { currentPassword: passwords.currentPassword, newPassword: passwords.newPassword });
+      logout();
+      window.sessionStorage.setItem(SESSION_NOTICE_KEY, 'Your password was changed. Sign in with your new password.');
+      navigate('/login', { replace: true });
     } catch (error) {
       showStatus('error', errorMessage(error));
     } finally { setBusy(false); }

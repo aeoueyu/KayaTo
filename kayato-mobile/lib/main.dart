@@ -3668,7 +3668,10 @@ class _SettingsTabState extends State<SettingsTab> {
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => ChangePasswordPage(api: widget.api),
+                  builder: (_) => ChangePasswordPage(
+                    api: widget.api,
+                    onPasswordChanged: widget.onLogout,
+                  ),
                 ),
               ),
             ),
@@ -4869,8 +4872,13 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
 }
 
 class ChangePasswordPage extends StatefulWidget {
-  const ChangePasswordPage({required this.api, super.key});
+  const ChangePasswordPage({
+    required this.api,
+    required this.onPasswordChanged,
+    super.key,
+  });
   final ApiClient api;
+  final VoidCallback onPasswordChanged;
   @override
   State<ChangePasswordPage> createState() => _ChangePasswordPageState();
 }
@@ -4902,8 +4910,11 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
         body: {'currentPassword': current.text, 'newPassword': next.text},
       );
       if (mounted) {
-        kayaToast.success('Password changed');
-        Navigator.pop(context);
+        kayaToast.success(
+          'Password changed',
+          description: 'Sign in again with your new password.',
+        );
+        widget.onPasswordChanged();
       }
     } catch (e) {
       setState(() => error = e.toString());
