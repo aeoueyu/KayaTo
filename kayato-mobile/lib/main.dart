@@ -158,16 +158,19 @@ class PushService {
   static Future<void> disable(ApiClient api) async {
     if (!await _initialize()) return;
     final token = await FirebaseMessaging.instance.getToken();
-    if (token != null) {
-      await api.request(
-        '/push/mobile',
-        method: 'DELETE',
-        body: {'token': token},
-      );
+    try {
+      if (token != null) {
+        await api.request(
+          '/push/mobile',
+          method: 'DELETE',
+          body: {'token': token},
+        );
+      }
+    } finally {
+      await FirebaseMessaging.instance.deleteToken();
+      await _tokenRefresh?.cancel();
+      _tokenRefresh = null;
     }
-    await FirebaseMessaging.instance.deleteToken();
-    await _tokenRefresh?.cancel();
-    _tokenRefresh = null;
   }
 }
 
@@ -342,15 +345,23 @@ class _KayaToAppState extends State<KayaToApp> with WidgetsBindingObserver {
   }
 
   Future<void> logout({bool sessionExpired = false}) async {
+    final shouldDisablePush =
+        user?['notificationChannels']?['mobilePush'] == true;
+    final pushCleanupApi = ApiClient()..token = api.token;
     final prefs = await SharedPreferences.getInstance();
-    if (user?['notificationChannels']?['mobilePush'] == true) {
-      await PushService.disable(api).catchError((_) {});
-    }
     await prefs.remove('token');
     await prefs.remove('last_activity');
     sessionTimer?.cancel();
     api.token = null;
     if (mounted) setState(() => user = null);
+    navigatorKey.currentState?.popUntil((route) => route.isFirst);
+    if (shouldDisablePush) {
+      unawaited(
+        PushService.disable(
+          pushCleanupApi,
+        ).timeout(const Duration(seconds: 5)).catchError((_) {}),
+      );
+    }
     if (sessionExpired) {
       kayaToast.info(
         'Session expired',
