@@ -54,7 +54,7 @@ export default function Bills() {
   return <section className="page-block">
     <div className="page-heading"><div><h1>Bills & reminders</h1><p>Track deadlines and continue payments only on official biller websites.</p></div><button className="button button-primary" onClick={() => setShow(true)}><Plus size={17} /> Add bill</button></div>
     {error && <p className="form-error page-notice">{error}</p>}
-    <div className="bill-summary"><div><span className="bill-summary-icon"><ReceiptText size={22} /></span><div><small>Upcoming total</small><strong>{formatCurrency(total, currency)}</strong><p>{bills.filter((bill) => bill.status !== 'paid').length} unpaid reminders</p></div></div><div className="currency-card"><small>Display currency</small><b>{currencyLabel(currency)}</b><p>Change this in Account settings.</p></div></div>
+    <div className="bill-summary"><div><span className="bill-summary-icon"><ReceiptText size={22} /></span><div><small>Upcoming total</small><strong>{formatCurrency(total, currency)}</strong><p>{bills.filter((bill) => bill.status !== 'paid').length}  unpaid reminders</p></div></div><div className="currency-card"><small>Display currency</small><b>{currencyLabel(currency)}</b><p>Change this in Account settings.</p></div></div>
     <section className="panel">
       <div className="panel-heading"><div><h2>Payment reminders</h2><span>Sorted by due date</span></div><CalendarDays size={19} /></div>
       {loading ? <div className="app-loading">Loading reminders...</div> : <div className="bill-list">

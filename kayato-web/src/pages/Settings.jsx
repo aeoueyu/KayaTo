@@ -167,6 +167,7 @@ export default function Settings() {
     if (!passwords.currentPassword) errors.currentPassword = 'Enter your current password.';
     else if (!passwordVerified) errors.currentPassword = 'Verify your current password first.';
     if (!passwords.newPassword) errors.newPassword = 'Enter a new password.';
+    else if (passwords.newPassword === passwords.currentPassword) errors.newPassword = 'New password must be different from your current password.';
     else if (!(passwords.newPassword.length >= 8 && passwords.newPassword.length <= 64 && /[A-Z]/.test(passwords.newPassword) && /[a-z]/.test(passwords.newPassword) && /\d/.test(passwords.newPassword) && /[^A-Za-z0-9]/.test(passwords.newPassword))) errors.newPassword = 'Meet all password requirements before continuing.';
     if (!passwords.confirmPassword) errors.confirmPassword = 'Confirm your new password.';
     else if (passwords.newPassword !== passwords.confirmPassword) errors.confirmPassword = 'Passwords do not match.';
@@ -269,6 +270,7 @@ export default function Settings() {
     ['One lowercase letter', /[a-z]/.test(passwords.newPassword)],
     ['One number', /\d/.test(passwords.newPassword)],
     ['One symbol', /[^A-Za-z0-9]/.test(passwords.newPassword)],
+    ['Different from current password', passwords.newPassword.length > 0 && passwords.newPassword !== passwords.currentPassword],
   ];
   const profileIsValid = profile.firstName.trim().length >= 2
     && profile.lastName.trim().length >= 2
@@ -357,10 +359,12 @@ export default function Settings() {
               </div>
               {!passwordVerified && <p className="password-verification-note"><LockKeyhole size={15} />Verify your current password to unlock the new password fields.</p>}
               <div className="security-password-grid" aria-disabled={!passwordVerified}>
-                <PasswordInput id="new-password" label="New password" value={passwords.newPassword} onChange={(event) => { clearFieldError('newPassword'); clearFieldError('confirmPassword'); setPasswords({ ...passwords, newPassword: event.target.value }); }} autoComplete="new-password" error={fieldErrors.newPassword} disabled={!passwordVerified} />
+                <div className="new-password-column">
+                  <PasswordInput id="new-password" label="New password" value={passwords.newPassword} onChange={(event) => { clearFieldError('newPassword'); clearFieldError('confirmPassword'); setPasswords({ ...passwords, newPassword: event.target.value }); }} autoComplete="new-password" error={fieldErrors.newPassword} disabled={!passwordVerified} />
+                  {passwords.newPassword && <ul className="password-checklist settings-password-checklist" aria-label="Password requirements">{rules.map(([label, met]) => <li key={label} className={met ? 'met' : ''}><Check size={14} />{label}</li>)}</ul>}
+                </div>
                 <PasswordInput id="confirm-new-password" label="Confirm new password" value={passwords.confirmPassword} onChange={(event) => { clearFieldError('confirmPassword'); setPasswords({ ...passwords, confirmPassword: event.target.value }); }} autoComplete="new-password" error={confirmPasswordError} success={confirmPasswordSuccess} disabled={!passwordVerified} />
               </div>
-              {passwords.newPassword && <ul className="password-checklist settings-password-checklist" aria-label="Password requirements">{rules.map(([label, met]) => <li key={label} className={met ? 'met' : ''}><Check size={14} />{label}</li>)}</ul>}
             </div>
             <footer><small className="settings-action-note">{!passwordVerified ? 'Verify your current password to continue.' : passwordIsValid ? 'Your new password is ready to save.' : 'Complete all password requirements.'}</small><button className="button button-primary" disabled={busy || !passwordIsValid}><ShieldCheck size={16} />{busy ? 'Updating...' : 'Update password'}</button></footer>
           </form>}
